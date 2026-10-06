@@ -41,14 +41,16 @@ func TestWorkersDoNotSendTheSameJobConcurrently(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := insertRegistration(t, pool)
-	m := s.Encrypt(id, "confirmation", []byte("tickets"))
-	if err := gen.New(pool).EnqueueEmail(t.Context(), gen.EnqueueEmailParams{RegistrationID: id, Kind: m.Kind, Payload: m.Payload}); err != nil {
+	if err := s.Enqueue(t.Context(), gen.New(pool), id, outbox.KindConfirmation, []byte("tickets")); err != nil {
 		t.Fatal(err)
 	}
 	started, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	var calls atomic.Int32
 	go func() {
-		_, err := s.DeliverOne(t.Context(), func(ctx context.Context, kind string, body []byte) error {
+		_, err := s.DeliverOne(t.Context(), func(ctx context.Context, job outbox.Job) error {
+			if job.RegistrationID != id || job.Kind != outbox.KindConfirmation || string(job.Payload) != "tickets" {
+				t.Errorf("job = %+v", job)
+			}
 			calls.Add(1)
 			close(started)
 			select {
@@ -61,7 +63,7 @@ func TestWorkersDoNotSendTheSameJobConcurrently(t *testing.T) {
 		done <- err
 	}()
 	<-started
-	found, err := s.DeliverOne(t.Context(), func(context.Context, string, []byte) error { calls.Add(1); return nil })
+	found, err := s.DeliverOne(t.Context(), func(context.Context, outbox.Job) error { calls.Add(1); return nil })
 	close(release)
 	if firstErr := <-done; firstErr != nil {
 		t.Fatal(firstErr)
@@ -79,20 +81,20 @@ func TestWrongKeyAndModifiedCiphertextNeverReachTransport(t *testing.T) {
 			t.Fatal(err)
 		}
 		id := insertRegistration(t, pool)
-		m := s.Encrypt(id, "confirmation", []byte("ticket code"))
+		if err := s.Enqueue(t.Context(), gen.New(pool), id, outbox.KindConfirmation, []byte("ticket code")); err != nil {
+			t.Fatal(err)
+		}
 		if corrupt {
-			m.Payload[len(m.Payload)-1] ^= 1
-		} else {
-			s, err = outbox.New(pool, strings.Repeat("cd", 32))
-			if err != nil {
+			// One bit of the stored ciphertext flipped: GCM must refuse it.
+			if _, err := pool.Exec(t.Context(),
+				`UPDATE email_jobs SET payload = set_byte(payload, length(payload) - 1, get_byte(payload, length(payload) - 1) # 1)`); err != nil {
 				t.Fatal(err)
 			}
-		}
-		if err := gen.New(pool).EnqueueEmail(t.Context(), gen.EnqueueEmailParams{RegistrationID: id, Kind: m.Kind, Payload: m.Payload}); err != nil {
+		} else if s, err = outbox.New(pool, strings.Repeat("cd", 32)); err != nil {
 			t.Fatal(err)
 		}
 		called := false
-		found, err := s.DeliverOne(t.Context(), func(context.Context, string, []byte) error {
+		found, err := s.DeliverOne(t.Context(), func(context.Context, outbox.Job) error {
 			called = true
 			return errors.New("must not reach transport")
 		})

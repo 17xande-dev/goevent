@@ -80,6 +80,22 @@ func Remaining(e events.Event, t events.TicketType, h Held) (n int, limited bool
 // The checkout key makes it idempotent: a resubmitted form finds the
 // registration it already made instead of booking twice.
 func (s *Store) Checkout(ctx context.Context, o Order, now time.Time) (Result, error) {
+	return s.CheckoutWith(ctx, o, now, Hooks{})
+}
+
+// Hooks run inside the checkout's transaction, so what they write — queued
+// emails — commits with the registration or not at all.
+type Hooks struct {
+	// Confirmed runs for a registration confirmed at checkout: a free one.
+	Confirmed OnConfirm
+	// AwaitingPayment runs for one that will be paid later, by EFT or cash.
+	AwaitingPayment func(ctx context.Context, q *gen.Queries, r Registration) error
+}
+
+// CheckoutWith is Checkout with hooks. It is a separate method rather than a
+// parameter so the many callers that want none — tests about seats and
+// prices — need not spell out an empty value.
+func (s *Store) CheckoutWith(ctx context.Context, o Order, now time.Time, hooks Hooks) (Result, error) {
 	if len(o.Attendees) == 0 {
 		return Result{}, ErrEmpty
 	}
@@ -174,7 +190,7 @@ func (s *Store) Checkout(ctx context.Context, o Order, now time.Time) (Result, e
 		status, hold = StatusPending, now.Add(HoldOnline)
 	}
 
-	reg, err := createRegistration(ctx, tx, q, gen.CreateRegistrationParams{
+	reg, err := createRegistration(ctx, tx, gen.CreateRegistrationParams{
 		EventID: o.EventID, ContactFirstName: o.Contact.FirstName, ContactLastName: o.Contact.LastName,
 		ContactEmail: o.Contact.Email, ContactPhone: o.Contact.Phone, Status: string(status),
 		TotalCents: total, Currency: o.Currency, HoldExpiresAt: hold, PayLater: payLater,
@@ -217,6 +233,17 @@ func (s *Store) Checkout(ctx context.Context, o Order, now time.Time) (Result, e
 		}
 		pp := payment(p)
 		res.Payment = &pp
+	}
+
+	switch {
+	case status == StatusConfirmed && hooks.Confirmed != nil:
+		if err := hooks.Confirmed(ctx, q, Confirmation{Registration: res.Registration, Attendees: res.Attendees}); err != nil {
+			return Result{}, err
+		}
+	case payLater && hooks.AwaitingPayment != nil:
+		if err := hooks.AwaitingPayment(ctx, q, res.Registration); err != nil {
+			return Result{}, err
+		}
 	}
 	return res, tx.Commit(ctx)
 }
@@ -281,7 +308,7 @@ func fits(e events.Event, types map[string]events.TicketType, order []string, wa
 
 // createRegistration inserts with a fresh reference, trying again under a
 // savepoint in the unlikely event the reference is taken.
-func createRegistration(ctx context.Context, tx pgx.Tx, q *gen.Queries, p gen.CreateRegistrationParams) (gen.Registration, error) {
+func createRegistration(ctx context.Context, tx pgx.Tx, p gen.CreateRegistrationParams) (gen.Registration, error) {
 	for range 5 {
 		ref, err := newReference()
 		if err != nil {

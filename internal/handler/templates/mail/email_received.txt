@@ -1,0 +1,16 @@
+{{/* A pay-later registration acknowledged, plain text. */ -}}
+Hello {{.Registration.ContactFirst}},
+
+We have your registration for {{.Event.Title}} ({{.Event.When}}).
+Your places are held until {{(.Event.Local .Registration.HoldExpiresAt).Format "Monday 2 January at 15:04"}}.
+
+To pay {{.Registration.Currency}} {{money .Registration.TotalCents}}, quoting {{.Registration.Reference}}:
+
+{{.Event.PayLaterInstructions}}
+
+Your tickets are emailed as soon as the organisers record your payment.
+
+Your registration:
+{{.ManageURL}}
+
+{{.SiteName}}

@@ -1,0 +1,39 @@
+{{/*
+  The HTML half of the confirmation, with a QR code per ticket. Sent alongside
+  the plain-text part, never instead of it.
+
+  Deliberately primitive: table layout, inline styles, no external CSS. Mail
+  clients are years behind browsers. The QR codes are inline images (cid:) carried
+  in the message, so they show with remote images blocked and with no signal at
+  the door.
+*/}}
+{{define "email_confirmation"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Your tickets for {{.Event.Title}}</title></head>
+<body style="font-family: sans-serif; color: #111; line-height: 1.5; max-width: 36rem;">
+<p>Hello {{.Registration.ContactFirst}},</p>
+
+<p>You are registered for <strong>{{.Event.Title}}</strong>.</p>
+
+<table cellpadding="4" cellspacing="0" border="0">
+  <tr><td style="color: #666;">When</td><td>{{.Event.When}}</td></tr>
+  {{with .Event.Venue}}<tr><td style="color: #666;">Where</td><td>{{.}}</td></tr>{{end}}
+  <tr><td style="color: #666;">Reference</td><td><strong>{{.Registration.Reference}}</strong></td></tr>
+</table>
+
+<p>Show one code per person at the door — on your phone or printed.</p>
+
+{{range .Tickets}}
+<table cellpadding="8" cellspacing="0" border="0" style="border: 1px solid #ddd; border-radius: 8px; margin: 0 0 12px; width: 100%;">
+  <tr>
+    <td style="width: 160px;"><img src="cid:{{.CID}}" width="150" height="150" alt="Ticket code for {{.Name}}"></td>
+    <td><strong>{{.Name}}</strong><br><span style="color: #666;">{{.TicketName}}</span></td>
+  </tr>
+</table>
+{{end}}
+
+<p><a href="{{.ManageURL}}">See your registration online</a> — the same codes are there too.</p>
+
+<p style="color: #666; font-size: 0.9em;">{{.SiteName}}</p>
+</body>
+</html>{{end}}

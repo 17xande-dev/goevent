@@ -705,7 +705,33 @@ pre.raw {
   font-weight: 600;
 }
 
-/* The QR hand-over and the ticket pages lay out a code beside its words. */
+/* A ticket on the registrant's page: the code beside the name on a wide
+   screen, above it on a phone. The well is white in any theme — a QR code on a
+   dark background does not scan. */
+.ticket-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-md);
+  align-items: start;
+
+  .qr-well {
+    inline-size: min(100%, 14rem);
+    background: #fff;
+    border-radius: var(--radius);
+    padding: var(--gap-xs);
+  }
+
+  .qr {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  h3 {
+    margin-block-start: 0;
+  }
+}
+
 .total {
   font-size: var(--text-large);
   font-variant-numeric: tabular-nums;

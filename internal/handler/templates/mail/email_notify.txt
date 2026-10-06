@@ -2,11 +2,15 @@
   The organiser's copy of a confirmed registration, sent to NOTIFY_EMAIL. Plain
   text only: it is read by a person deciding whether anything needs doing, and
   the admin has the rest.
-*/}}New registration for {{.EventTitle}}
+*/ -}}
+{{if .Registration.Oversold}}OVERSOLD: this registration was paid for after its hold lapsed, and the event
+had filled in the meantime. It is confirmed — the money is real — so decide
+whether to make room or refund.
 
-Reference: {{.Reference}}
-Contact:   {{.ContactName}} <{{.ContactEmail}}>
-Tickets:   {{.TicketCount}}
-Total:     {{.Currency}} {{money .TotalCents}}
+{{end}}New registration for {{.Event.Title}}
+
+Reference: {{.Registration.Reference}}
+Contact:   {{.Registration.ContactName}} <{{.Registration.ContactEmail}}>{{with .Registration.ContactPhone}}, {{.}}{{end}}
+Total:     {{if .Registration.Free}}Free{{else}}{{.Registration.Currency}} {{money .Registration.TotalCents}}{{end}}
 
 {{.AdminURL}}

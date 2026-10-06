@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/goevent/internal/ticket"
 )
 
 // After the gateway: the page its browser return lands on, the status poll a
@@ -95,6 +97,9 @@ type managePage struct {
 	Answers      []registrations.Answer
 	// AttendeeAnswers groups the per-attendee answers by attendee id.
 	AttendeeAnswers map[string][]registrations.Answer
+	// Tickets is each active attendee's QR code, by attendee id — present only
+	// once the registration is confirmed: a held seat is not a ticket.
+	Tickets map[string]template.HTML
 }
 
 // manageRegistration is a registrant's own page: what they registered, its
@@ -131,6 +136,20 @@ func (h *Handler) manageRegistration(w http.ResponseWriter, r *http.Request) {
 			data.Answers = append(data.Answers, a)
 		} else {
 			data.AttendeeAnswers[a.AttendeeID] = append(data.AttendeeAnswers[a.AttendeeID], a)
+		}
+	}
+	if reg.Status == registrations.StatusConfirmed {
+		data.Tickets = map[string]template.HTML{}
+		for _, a := range attendees {
+			if a.Status != "active" {
+				continue
+			}
+			svg, err := ticket.SVG(h.signer.TicketCode(a.ID), "Ticket code for "+a.Name())
+			if err != nil {
+				h.serverError(w, r, err)
+				return
+			}
+			data.Tickets[a.ID] = svg
 		}
 	}
 	// The page carries the registrant's details and, soon, their tickets: it is

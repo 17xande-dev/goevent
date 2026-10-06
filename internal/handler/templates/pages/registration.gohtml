@@ -41,13 +41,17 @@
 {{end}}
 
 <h2>Who is coming</h2>
+{{if .Tickets}}<p class="muted">Show one code per person at the door.</p>{{end}}
 {{range .Attendees}}
-<section class="panel">
-  <h3>{{.Name}}</h3>
-  <p class="muted">{{.TicketName}}{{if eq .Status "cancelled"}} · <span class="badge problem">Cancelled</span>{{end}}</p>
-  {{with index $.AttendeeAnswers .ID}}
-  <dl class="facts">{{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
-  {{end}}
+<section class="panel ticket-card">
+  {{with index $.Tickets .ID}}<div class="qr-well">{{.}}</div>{{end}}
+  <div>
+    <h3>{{.Name}}</h3>
+    <p class="muted">{{.TicketName}}{{if eq .Status "cancelled"}} · <span class="badge problem">Cancelled</span>{{end}}</p>
+    {{with index $.AttendeeAnswers .ID}}
+    <dl class="facts">{{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+    {{end}}
+  </div>
 </section>
 {{end}}
 

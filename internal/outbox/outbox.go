@@ -1,5 +1,12 @@
-// Package outbox keeps encrypted email jobs in the payment's database transaction.
+// Package outbox keeps email jobs in the database, written inside the
+// transaction that makes them true — a confirmation commits with the payment
+// that confirmed it, or neither does — and delivered by a worker afterwards.
 // Delivery is at least once: SMTP cannot atomically commit with Postgres.
+//
+// A job names a registration and a kind of email; the worker renders it from the
+// database when it sends. Its payload is still encrypted, under a key derived
+// from SECRET_KEY, so a caller that does put something sensitive in one — a
+// note to the registrant, say — does not have to remember to.
 package outbox
 
 import (
@@ -16,6 +23,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// The kinds of email, which the schema's CHECK constraint also lists.
+const (
+	// KindConfirmation is the registrant's confirmation, with their tickets.
+	KindConfirmation = "confirmation"
+	// KindReceived acknowledges a pay-later registration: how to pay, no tickets.
+	KindReceived = "received"
+	// KindNotify is the organiser's copy of a confirmed registration.
+	KindNotify = "notify"
+	// KindResend sends the tickets again, at an administrator's request.
+	KindResend = "resend"
+)
+
 type Store struct {
 	pool *pgxpool.Pool
 	aead cipher.AEAD
@@ -24,7 +43,7 @@ type Store struct {
 func New(pool *pgxpool.Pool, key string) (*Store, error) {
 	b, err := hex.DecodeString(key)
 	if err != nil || len(b) != 32 {
-		return nil, errors.New("SECRET_KEY must be 64 hexadecimal characters (32 random bytes)")
+		return nil, errors.New("outbox: the key must be 64 hexadecimal characters (32 bytes)")
 	}
 	block, err := aes.NewCipher(b)
 	if err != nil {
@@ -38,21 +57,30 @@ func New(pool *pgxpool.Pool, key string) (*Store, error) {
 	return &Store{pool: pool, aead: aead}, nil
 }
 
-// Message is already encrypted when handed to the confirming transaction. Binding
-// ciphertext to registration and kind prevents a moved payload becoming another
-// registration's tickets.
-type Message struct {
-	Kind    string
-	Payload []byte
+// Enqueue writes a job inside the caller's transaction, q. The ciphertext is
+// bound to its registration and kind, so a payload moved to another row fails
+// to decrypt rather than becoming somebody else's email.
+func (s *Store) Enqueue(ctx context.Context, q *gen.Queries, registrationID, kind string, payload []byte) error {
+	sealed := s.aead.Seal(nil, nil, payload, []byte(registrationID+":"+kind))
+	if err := q.EnqueueEmail(ctx, gen.EnqueueEmailParams{
+		RegistrationID: registrationID, Kind: kind, Payload: sealed,
+	}); err != nil {
+		return fmt.Errorf("outbox: enqueue %s: %w", kind, err)
+	}
+	return nil
 }
 
-func (s *Store) Encrypt(registrationID, kind string, plain []byte) Message {
-	return Message{Kind: kind, Payload: s.aead.Seal(nil, nil, plain, []byte(registrationID+":"+kind))}
+// Job is one email to send, decrypted.
+type Job struct {
+	RegistrationID string
+	Kind           string
+	Payload        []byte
 }
 
-// DeliverOne holds a row lock during a bounded send. It never logs payloads or
-// transport error text: either can include a ticket code or credential.
-func (s *Store) DeliverOne(ctx context.Context, send func(context.Context, string, []byte) error) (bool, error) {
+// DeliverOne sends the next due job, holding its row lock during a bounded
+// send so two workers never send the same one. It never logs payloads or
+// transport error text: either can carry a ticket code or a credential.
+func (s *Store) DeliverOne(ctx context.Context, send func(context.Context, Job) error) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 	tx, err := s.pool.Begin(ctx)
@@ -73,7 +101,7 @@ func (s *Store) DeliverOne(ctx context.Context, send func(context.Context, strin
 	reason := "Unable to decrypt queued email. Check SECRET_KEY."
 	if deliveryErr == nil {
 		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		deliveryErr = send(sendCtx, job.Kind, plain)
+		deliveryErr = send(sendCtx, Job{RegistrationID: job.RegistrationID, Kind: job.Kind, Payload: plain})
 		cancel()
 		reason = "Email delivery failed; check mail configuration and retry."
 	}
@@ -85,7 +113,7 @@ func (s *Store) DeliverOne(ctx context.Context, send func(context.Context, strin
 		if err := q.CompleteEmail(ctx, job.ID); err != nil {
 			return true, err
 		}
-		if job.Kind == "confirmation" {
+		if job.Kind == KindConfirmation {
 			if err := q.MarkRegistrationEmailed(ctx, job.RegistrationID); err != nil {
 				return true, err
 			}

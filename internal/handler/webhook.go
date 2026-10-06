@@ -107,7 +107,7 @@ func (h *Handler) applyCallback(r *http.Request, gateway payment.Gateway, cb pay
 		return h.callbackResult(log, err, "payment did not complete")
 	}
 
-	outcome, err := h.regs.MarkPaid(r.Context(), n, h.onConfirm(r))
+	outcome, err := h.regs.MarkPaid(r.Context(), n, h.onConfirm())
 	switch {
 	case err != nil:
 		return h.callbackResult(log, err, "")
@@ -168,7 +168,3 @@ func unpaidStatus(o payment.Outcome) string {
 		return "pending"
 	}
 }
-
-// onConfirm is what a confirmation does besides flipping the status: queue the
-// emails. Mail lands in the next change; until then nothing else happens.
-func (h *Handler) onConfirm(*http.Request) registrations.OnConfirm { return nil }

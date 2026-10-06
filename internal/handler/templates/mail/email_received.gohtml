@@ -1,0 +1,24 @@
+{{/*
+  A pay-later registration acknowledged: how to pay, and that tickets follow
+  once the payment is recorded.
+*/}}
+{{define "email_received"}}<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Registration received for {{.Event.Title}}</title></head>
+<body style="font-family: sans-serif; color: #111; line-height: 1.5; max-width: 36rem;">
+<p>Hello {{.Registration.ContactFirst}},</p>
+
+<p>We have your registration for <strong>{{.Event.Title}}</strong> ({{.Event.When}}). Your places are held
+until {{(.Event.Local .Registration.HoldExpiresAt).Format "Monday 2 January at 15:04"}}.</p>
+
+<p><strong>To pay {{.Registration.Currency}} {{money .Registration.TotalCents}}</strong>, quoting
+<strong>{{.Registration.Reference}}</strong>:</p>
+<div style="border-left: 3px solid #1e4d3b; padding: 4px 12px; background: #f5f5f3;">{{paragraphs .Event.PayLaterInstructions}}</div>
+
+<p>Your tickets are emailed as soon as the organisers record your payment.</p>
+
+<p><a href="{{.ManageURL}}">See your registration online</a></p>
+
+<p style="color: #666; font-size: 0.9em;">{{.SiteName}}</p>
+</body>
+</html>{{end}}

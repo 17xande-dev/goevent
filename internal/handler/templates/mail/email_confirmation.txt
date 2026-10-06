@@ -1,0 +1,23 @@
+{{/*
+  The confirmation, plain text. A text/template, so nothing is escaped — an
+  ampersand in an event title arrives as an ampersand. The QR codes are in the
+  HTML part and on the registration page; here are their codes as text, which a
+  door volunteer can type.
+*/ -}}
+Hello {{.Registration.ContactFirst}},
+
+You are registered for {{.Event.Title}}.
+
+When:      {{.Event.When}}
+{{with .Event.Venue}}Where:     {{.}}
+{{end}}Reference: {{.Registration.Reference}}
+
+TICKETS
+{{range .Tickets}}
+{{.Name}} — {{.TicketName}}
+{{.Code}}
+{{end}}
+Your registration, with the QR codes to show at the door:
+{{.ManageURL}}
+
+{{.SiteName}}

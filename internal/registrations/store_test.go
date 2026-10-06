@@ -88,6 +88,45 @@ func TestCheckout_FreeIsConfirmedAtOnce(t *testing.T) {
 	}
 }
 
+// The hooks are how a confirmation email commits with the registration: each
+// runs for its own case only, and a failing one undoes the checkout.
+func TestCheckoutWith_RunsTheRightHookInTheTransaction(t *testing.T) {
+	f := open(t, 10, func(e *events.Event) { e.PayLater, e.PayLaterInstructions = true, "EFT" })
+	var confirmed, awaiting int
+	hooks := registrations.Hooks{
+		Confirmed: func(context.Context, *gen.Queries, registrations.Confirmation) error { confirmed++; return nil },
+		AwaitingPayment: func(context.Context, *gen.Queries, registrations.Registration) error {
+			awaiting++
+			return nil
+		},
+	}
+	if _, err := f.regs.CheckoutWith(t.Context(), f.order("free", "", f.free), now, hooks); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.regs.CheckoutWith(t.Context(), f.order("later", registrations.MethodLater, f.adult), now, hooks); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.regs.CheckoutWith(t.Context(), f.order("online", "fake", f.adult), now, hooks); err != nil {
+		t.Fatal(err)
+	}
+	if confirmed != 1 || awaiting != 1 {
+		t.Errorf("hooks ran confirmed=%d awaiting=%d, want 1 each", confirmed, awaiting)
+	}
+
+	boom := errors.New("queue unavailable")
+	_, err := f.regs.CheckoutWith(t.Context(), f.order("fails", "", f.free), now, registrations.Hooks{
+		Confirmed: func(context.Context, *gen.Queries, registrations.Confirmation) error { return boom },
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+	var n int
+	f.pool.QueryRow(t.Context(), `SELECT count(*) FROM registrations WHERE checkout_key = 'fails'`).Scan(&n)
+	if n != 0 {
+		t.Error("a registration whose confirmation could not be queued was kept")
+	}
+}
+
 func TestCheckout_PaidHoldsSeatsWithAPendingPayment(t *testing.T) {
 	f := open(t, 10)
 	res, err := f.regs.Checkout(t.Context(), f.order("k1", "fake", f.adult, f.adult, f.free), now)

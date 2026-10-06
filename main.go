@@ -158,6 +158,9 @@ func run() error {
 	// on this context, so the sweeps stop with the server rather than outliving it.
 	startSessionCleanup(ctx, users, log)
 	startHoldExpiry(ctx, regs, log)
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	waitWorker := h.StartMailWorker(workerCtx)
+	defer func() { stopWorker(); waitWorker() }()
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),

@@ -10,3 +10,7 @@ deploy/*/backups/
 
 .codex
 
+
+# Local development against a sibling checkout (e.g. ../mailer before a release).
+go.work
+go.work.sum

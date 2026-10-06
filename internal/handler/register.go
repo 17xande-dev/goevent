@@ -198,7 +198,7 @@ func (h *Handler) registerSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.regs.Checkout(r.Context(), order, time.Now())
+	res, err := h.regs.CheckoutWith(r.Context(), order, time.Now(), h.hooks())
 	if err != nil {
 		data.Problem = checkoutProblem(err)
 		if data.Problem == "" {
