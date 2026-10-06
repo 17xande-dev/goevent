@@ -34,7 +34,7 @@ func TestAdminAuth_SignsInWithEmailAndPassword(t *testing.T) {
 	if res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("sign in = %d %s", res.StatusCode, body)
 	}
-	if got := res.Header.Get("Location"); got != "/admin/" {
+	if got := res.Header.Get("Location"); got != adminHome {
 		t.Errorf("Location = %q, want /admin/", got)
 	}
 
@@ -66,7 +66,7 @@ func TestAdminAuth_SignsInWithEmailAndPassword(t *testing.T) {
 	}
 
 	// The jar now holds the session, so the protected pages open.
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusOK {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusOK {
 		t.Errorf("GET /admin/ after signing in = %d, want 200", res.StatusCode)
 	}
 }
@@ -105,7 +105,7 @@ func TestAdminAuth_RejectsBadCredentials(t *testing.T) {
 	}
 
 	// And a failed login leaves the admin closed.
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusSeeOther {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("GET /admin/ after failed logins = %d, want 303", res.StatusCode)
 	}
 }
@@ -131,7 +131,7 @@ func TestAdminAuth_LogoutDeletesTheSessionRow(t *testing.T) {
 	s := setupApp(t)
 	owner := s.owner
 
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusOK {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusOK {
 		t.Fatal("not signed in at the start of the test")
 	}
 
@@ -152,7 +152,7 @@ func TestAdminAuth_LogoutDeletesTheSessionRow(t *testing.T) {
 	if n, err := s.users.CountSessionsForUser(t.Context(), owner.ID); err != nil || n != 0 {
 		t.Errorf("sessions after logout = %d (err %v), want 0", n, err)
 	}
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusSeeOther {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("GET /admin/ after logout = %d, want 303", res.StatusCode)
 	}
 }
@@ -198,14 +198,14 @@ func TestAdminAuth_DisablingAnAccountEndsItsSession(t *testing.T) {
 	manager := mustAccount(t, s, "manager@example.com", testPassword, auth.RoleManager)
 	signInAs(t, s.srv, "manager@example.com", testPassword)
 
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusOK {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusOK {
 		t.Fatal("the manager is not signed in at the start of the test")
 	}
 
 	if err := s.users.SetDisabled(t.Context(), manager.ID, true); err != nil {
 		t.Fatalf("SetDisabled: %v", err)
 	}
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusSeeOther {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("GET /admin/ after being disabled = %d, want 303", res.StatusCode)
 	}
 }
@@ -218,7 +218,7 @@ func TestAdminAuth_PasswordChangeEndsTheSession(t *testing.T) {
 	if err := s.users.SetPassword(t.Context(), owner.ID, cheapHash(t, "a different long passphrase"), true); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusSeeOther {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("GET /admin/ after a password change = %d, want 303", res.StatusCode)
 	}
 }
@@ -248,7 +248,7 @@ func TestAdminAuth_ExpiredSessionIsRejected(t *testing.T) {
 		t.Fatalf("IssueSession: %v", err)
 	}
 
-	req := newRequest(t, s.srv, http.MethodGet, "/admin/", nil)
+	req := newRequest(t, s.srv, http.MethodGet, adminHome, nil)
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	if res, _ := do(t, s.srv, req); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("expired session = %d, want 303", res.StatusCode)
@@ -308,7 +308,7 @@ func TestAdminAuth_NextCannotLeaveTheSite(t *testing.T) {
 			t.Errorf("next %q: sign in = %d %s", next, res.StatusCode, body)
 			continue
 		}
-		if got := res.Header.Get("Location"); got != "/admin/" {
+		if got := res.Header.Get("Location"); got != adminHome {
 			t.Errorf("next %q sent the browser to %q, want /admin/", next, got)
 		}
 	}

@@ -392,13 +392,13 @@ func TestAdminUsers_RefusesToRemoveTheLastOwner(t *testing.T) {
 
 func TestAdminUsers_NavLinkFollowsThePermission(t *testing.T) {
 	s := setupApp(t)
-	if _, body := get(t, s.srv, "/admin/"); !strings.Contains(body, `href="/admin/users"`) {
+	if _, body := get(t, s.srv, adminHome); !strings.Contains(body, `href="/admin/users"`) {
 		t.Error("an owner has no Users link")
 	}
 
 	mustAccount(t, s, "manager@example.com", testPassword, auth.RoleManager)
 	signInAs(t, s.srv, "manager@example.com", testPassword)
-	if _, body := get(t, s.srv, "/admin/"); strings.Contains(body, `href="/admin/users"`) {
+	if _, body := get(t, s.srv, adminHome); strings.Contains(body, `href="/admin/users"`) {
 		t.Error("a manager is offered a Users link they cannot open")
 	}
 	// And the link being absent is not the restriction.
@@ -444,7 +444,7 @@ func TestAdminPassword_ChangeYourOwn(t *testing.T) {
 	if n, _ := s.users.CountSessionsForUser(t.Context(), s.owner.ID); n != 0 {
 		t.Errorf("sessions after changing your own password = %d, want 0", n)
 	}
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusSeeOther {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusSeeOther {
 		t.Errorf("still signed in after a password change: %d", res.StatusCode)
 	}
 	after, err := s.users.Get(t.Context(), s.owner.ID)
@@ -480,7 +480,7 @@ func TestAdminPassword_ForcedChangeAfterAReset(t *testing.T) {
 	signInAs(t, s.srv, "manager@example.com", newPassword)
 
 	// Nothing else opens until they have chosen one.
-	res, _ = get(t, s.srv, "/admin/")
+	res, _ = get(t, s.srv, adminHome)
 	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != accountPath {
 		t.Fatalf("GET /admin/ = %d %q, want a bounce to %s",
 			res.StatusCode, res.Header.Get("Location"), accountPath)
@@ -504,7 +504,7 @@ func TestAdminPassword_ForcedChangeAfterAReset(t *testing.T) {
 	}
 
 	signInAs(t, s.srv, "manager@example.com", chosen)
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusOK {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusOK {
 		t.Errorf("GET /admin/ after choosing a password = %d, want 200", res.StatusCode)
 	}
 }

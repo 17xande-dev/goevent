@@ -1,17 +1,17 @@
-// Package blob stores product images in object storage.
+// Package blob stores event images in object storage.
 //
-// The Storage interface is deliberately three methods wide. The store needs to put
-// an image somewhere public, remove it again, and know its URL — nothing else. No
-// listing, no copying, no multipart uploads: a shop with a few hundred product
-// photos does not need them, and every method on an interface is a method every
-// future implementation has to provide.
+// The Storage interface is deliberately three methods wide. The server needs to
+// put an image somewhere public, remove it again, and know its URL — nothing else.
+// No listing, no copying, no multipart uploads: a few hundred event pictures do
+// not need them, and every method on an interface is a method every future
+// implementation has to provide.
 //
 // # Reads never come through here
 //
 // An uploaded image's URL points straight at the bucket's public hostname, so the
 // bytes are served by whatever CDN sits in front of it and never pass through Go.
-// That is why there is a URL method and no Get: the storefront links to images, it
-// does not proxy them.
+// That is why there is a URL method and no Get: the public pages link to images, they
+// do not proxy them.
 //
 // The trade is that the bucket has to be publicly readable, which is why Put
 // refuses anything it cannot prove is an image — see Validate. An attacker who can
@@ -42,12 +42,12 @@ type Storage interface {
 	URL(key string) string
 }
 
-// MaxUploadBytes is the default cap on an uploaded image. Product photographs are
+// MaxUploadBytes is the default cap on an uploaded image. Event pictures are
 // hundreds of kilobytes; the limit exists so an authenticated but careless
 // operator cannot post a 200 MB TIFF and have the server buffer it.
 const MaxUploadBytes int64 = 5 << 20
 
-// ErrUnsupportedType is returned for an upload that is not an image this store
+// ErrUnsupportedType is returned for an upload that is not an image this server
 // will serve.
 var ErrUnsupportedType = errors.New("blob: not a supported image type")
 

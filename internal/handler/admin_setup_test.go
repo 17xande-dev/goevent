@@ -61,7 +61,7 @@ func TestAdminSetup_ClaimsTheFirstAccount(t *testing.T) {
 	if res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("claim = %d %s", res.StatusCode, body)
 	}
-	if got := res.Header.Get("Location"); got != "/admin/" {
+	if got := res.Header.Get("Location"); got != adminHome {
 		t.Errorf("Location = %q, want /admin/", got)
 	}
 
@@ -83,7 +83,7 @@ func TestAdminSetup_ClaimsTheFirstAccount(t *testing.T) {
 
 	// Signed in by the claim: they hold the token and have just chosen the
 	// password, which is more than the login form asks for.
-	if res, _ := get(t, s.srv, "/admin/"); res.StatusCode != http.StatusOK {
+	if res, _ := get(t, s.srv, adminHome); res.StatusCode != http.StatusOK {
 		t.Errorf("GET /admin/ after claiming = %d, want 200", res.StatusCode)
 	}
 	// And the password really is the one they typed.
@@ -132,7 +132,7 @@ func TestAdminSetup_LocksAfterOneClaim(t *testing.T) {
 	// claim, so it skips the form for the admin itself; TestAdminAuth_SignsIn…
 	// covers the form rendering for a jar that is not.
 	res, _ = get(t, s.srv, "/admin/login")
-	if got := res.Header.Get("Location"); got != "/admin/" {
+	if got := res.Header.Get("Location"); got != adminHome {
 		t.Errorf("GET /admin/login on a claimed store → %q, want /admin/", got)
 	}
 }

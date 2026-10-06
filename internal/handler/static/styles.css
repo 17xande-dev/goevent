@@ -945,7 +945,7 @@ button,
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: var(--gap-xs) var(--gap);
-  margin: 0;
+  margin: 0 0 var(--gap-md);
 
   > dt {
     color: var(--ink-soft);
@@ -1021,6 +1021,26 @@ table {
 
 .scroll-x {
   overflow-x: auto;
+}
+
+/* A fieldset that groups nothing visually — it exists so a form's fields can be
+   disabled together for a role that may only read them. */
+fieldset.bare {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+/* An event's picture in the admin: wide, framed the same whatever was uploaded. */
+.event-image {
+  display: block;
+  inline-size: min(100%, 28rem);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  margin-block-end: var(--gap);
+  background: var(--paper-sunk);
 }
 
 /* --- Utility ------------------------------------------------------------- */

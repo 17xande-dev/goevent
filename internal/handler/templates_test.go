@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/blob"
+	"github.com/17xande-dev/goevent/internal/events"
 )
 
 // Every page, rendered with the data its handler passes.
@@ -18,16 +19,27 @@ import (
 // parse error at boot. Rendering all of them is what puts that failure back in CI.
 func testPages() map[string]any {
 	p := page{Title: "A page", SiteName: "Test Events"}
+	two := 2
+	e := events.Event{ID: "e1", Slug: "e", Title: "E", Timezone: events.DefaultTimezone, Status: events.StatusDraft}
 	return map[string]any{
 		"not_found":       errorPageData{page: p, Status: 404},
 		"error_client":    errorPageData{page: p, Status: 403, Heading: "No"},
 		"error_server":    errorPageData{page: p, Status: 500, Heading: "Sorry"},
 		"admin_login":     loginPage{page: p},
 		"admin_setup":     setupPage{page: p},
-		"admin_home":      p,
-		"admin_users":     usersPage{page: p},
-		"admin_user_form": userFormPage{page: p},
-		"admin_account":   accountPage{page: p},
+		"admin_events":    eventsPage{page: p},
+		"admin_event_new": eventFormPage{page: p, Form: formValues{}},
+		"admin_event": eventPage{
+			eventFormPage: eventFormPage{page: p, Event: e, Form: eventValues(e)},
+			TicketTypes:   []events.TicketType{{Name: "Adult", PriceCents: 15000, Capacity: &two}},
+			Questions:     []events.Question{{Label: "Dietary needs", Scope: events.ScopeAttendee, Kind: events.KindText}},
+			Next:          e.Status.Next(),
+		},
+		"admin_ticket_form":   ticketFormPage{page: p, Event: e, IsNew: true, Form: formValues{}},
+		"admin_question_form": questionFormPage{page: p, Event: e, IsNew: true, Form: formValues{}, Scopes: events.Scopes, Kinds: events.Kinds},
+		"admin_users":         usersPage{page: p},
+		"admin_user_form":     userFormPage{page: p},
+		"admin_account":       accountPage{page: p},
 	}
 }
 
@@ -38,7 +50,7 @@ func TestParseTemplates_EmbeddedDefaultsRender(t *testing.T) {
 	}
 
 	pages := testPages()
-	if len(pages) < 9 {
+	if len(pages) < 13 {
 		t.Fatalf("only %d pages to render", len(pages))
 	}
 	for name, data := range pages {
@@ -131,14 +143,14 @@ func TestParseTemplates_OverrideDirWins(t *testing.T) {
 	dir := t.TempDir()
 	// The override mirrors the embedded tree: same subdirectory, same file name,
 	// and it defines the same names that file defines — "content" for a page.
-	writeOverride(t, dir, "admin/admin_home.gohtml", `{{define "content"}}OVERRIDDEN{{end}}`)
+	writeOverride(t, dir, "admin/admin_events.gohtml", `{{define "content"}}OVERRIDDEN{{end}}`)
 
 	tmpl, err := ParseTemplates(dir, blob.NewFake())
 	if err != nil {
 		t.Fatalf("ParseTemplates: %v", err)
 	}
 
-	if body := render(t, tmpl, "admin_home"); !strings.Contains(body, "OVERRIDDEN") {
+	if body := render(t, tmpl, "admin_events"); !strings.Contains(body, "OVERRIDDEN") {
 		t.Errorf("body = %q, want the override", body)
 	}
 
@@ -157,7 +169,7 @@ func TestParseTemplates_OverrideDirWins(t *testing.T) {
 // the next refresh, without a restart.
 func TestSetReload_PicksUpAnEditWithoutReparsing(t *testing.T) {
 	dir := t.TempDir()
-	file := writeOverride(t, dir, "admin/admin_home.gohtml", `{{define "content"}}FIRST{{end}}`)
+	file := writeOverride(t, dir, "admin/admin_events.gohtml", `{{define "content"}}FIRST{{end}}`)
 
 	tmpl, err := ParseTemplates(dir, blob.NewFake())
 	if err != nil {
@@ -165,14 +177,14 @@ func TestSetReload_PicksUpAnEditWithoutReparsing(t *testing.T) {
 	}
 	tmpl.SetReload(true)
 
-	if got := render(t, tmpl, "admin_home"); !strings.Contains(got, "FIRST") {
+	if got := render(t, tmpl, "admin_events"); !strings.Contains(got, "FIRST") {
 		t.Fatalf("body = %q, want FIRST", got)
 	}
 
 	if err := os.WriteFile(file, []byte(`{{define "content"}}SECOND{{end}}`), 0o600); err != nil {
 		t.Fatalf("rewrite override: %v", err)
 	}
-	if got := render(t, tmpl, "admin_home"); !strings.Contains(got, "SECOND") {
+	if got := render(t, tmpl, "admin_events"); !strings.Contains(got, "SECOND") {
 		t.Errorf("body = %q, want SECOND: the edit needed a restart to appear", got)
 	}
 }
@@ -181,7 +193,7 @@ func TestSetReload_PicksUpAnEditWithoutReparsing(t *testing.T) {
 // wants, and what makes a broken override a boot failure rather than a 500.
 func TestParseTemplates_WithoutReloadAnEditIsNotPickedUp(t *testing.T) {
 	dir := t.TempDir()
-	file := writeOverride(t, dir, "admin/admin_home.gohtml", `{{define "content"}}FIRST{{end}}`)
+	file := writeOverride(t, dir, "admin/admin_events.gohtml", `{{define "content"}}FIRST{{end}}`)
 
 	tmpl, err := ParseTemplates(dir, blob.NewFake())
 	if err != nil {
@@ -190,7 +202,7 @@ func TestParseTemplates_WithoutReloadAnEditIsNotPickedUp(t *testing.T) {
 	if err := os.WriteFile(file, []byte(`{{define "content"}}SECOND{{end}}`), 0o600); err != nil {
 		t.Fatalf("rewrite override: %v", err)
 	}
-	if got := render(t, tmpl, "admin_home"); !strings.Contains(got, "FIRST") {
+	if got := render(t, tmpl, "admin_events"); !strings.Contains(got, "FIRST") {
 		t.Errorf("body = %q, want the set read at startup", got)
 	}
 }
@@ -200,14 +212,14 @@ func TestParseTemplates_WithoutReloadAnEditIsNotPickedUp(t *testing.T) {
 // whole recovery.
 func TestSetReload_ABrokenEditIsAnErrorAndRecoversOnTheNextSave(t *testing.T) {
 	dir := t.TempDir()
-	file := writeOverride(t, dir, "admin/admin_home.gohtml", `{{define "content"}}GOOD{{end}}`)
+	file := writeOverride(t, dir, "admin/admin_events.gohtml", `{{define "content"}}GOOD{{end}}`)
 
 	tmpl, err := ParseTemplates(dir, blob.NewFake())
 	if err != nil {
 		t.Fatalf("ParseTemplates: %v", err)
 	}
 	tmpl.SetReload(true)
-	if got := render(t, tmpl, "admin_home"); !strings.Contains(got, "GOOD") {
+	if got := render(t, tmpl, "admin_events"); !strings.Contains(got, "GOOD") {
 		t.Fatalf("body = %q, want GOOD", got)
 	}
 
@@ -215,7 +227,7 @@ func TestSetReload_ABrokenEditIsAnErrorAndRecoversOnTheNextSave(t *testing.T) {
 		t.Fatalf("write broken override: %v", err)
 	}
 	w := httptest.NewRecorder()
-	if err := tmpl.Render(w, http.StatusOK, "admin_home", page{}); err == nil {
+	if err := tmpl.Render(w, http.StatusOK, "admin_events", page{}); err == nil {
 		t.Error("a template that does not parse rendered without an error")
 	}
 	if w.Body.Len() != 0 {
@@ -226,7 +238,7 @@ func TestSetReload_ABrokenEditIsAnErrorAndRecoversOnTheNextSave(t *testing.T) {
 	if err := os.WriteFile(file, []byte(`{{define "content"}}FIXED{{end}}`), 0o600); err != nil {
 		t.Fatalf("write fixed override: %v", err)
 	}
-	if got := render(t, tmpl, "admin_home"); !strings.Contains(got, "FIXED") {
+	if got := render(t, tmpl, "admin_events"); !strings.Contains(got, "FIXED") {
 		t.Errorf("body = %q, want FIXED", got)
 	}
 }

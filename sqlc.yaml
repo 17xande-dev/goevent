@@ -69,3 +69,10 @@ sql:
           # so sqlc would default to int32 and put a conversion at every use.
           - db_type: "pg_catalog.int4"
             go_type: "int"
+          # A nullable count — an optional capacity — is *int, where nil is
+          # "unlimited" and 0 is "none left", two facts that must not collapse.
+          - db_type: "pg_catalog.int4"
+            nullable: true
+            go_type:
+              type: "int"
+              pointer: true

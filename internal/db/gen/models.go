@@ -82,7 +82,7 @@ type Event struct {
 	EndsAt               time.Time
 	Timezone             string
 	ImageKey             *string
-	Capacity             *int32
+	Capacity             *int
 	Status               string
 	Listed               bool
 	RegistrationOpensAt  *time.Time
@@ -150,7 +150,7 @@ type TicketType struct {
 	Name               string
 	Description        string
 	PriceCents         int64
-	Capacity           *int32
+	Capacity           *int
 	MaxPerRegistration int
 	SalesStartAt       *time.Time
 	SalesEndAt         *time.Time

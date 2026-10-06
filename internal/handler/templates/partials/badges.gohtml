@@ -1,0 +1,2 @@
+{{/* event_status renders an events.Status as a badge. */}}
+{{define "event_status"}}<span class="badge{{if eq . "published"}} done{{else if eq . "cancelled"}} problem{{end}}">{{.Label}}</span>{{end}}

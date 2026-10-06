@@ -14,7 +14,7 @@ import (
 
 // adminHome is where signing in lands when nothing asked to go elsewhere. Every
 // role can open it, so a door volunteer's first page is not a 403.
-const adminHome = "/admin/"
+const adminHome = "/admin/events"
 
 type loginPage struct {
 	page

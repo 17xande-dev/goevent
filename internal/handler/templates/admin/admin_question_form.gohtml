@@ -1,0 +1,95 @@
+{{define "content"}}
+{{$write := .Can "events.write"}}
+
+<a class="back" href="/admin/events/{{.Event.ID}}#questions">← {{.Event.Title}}</a>
+<h1>{{if .IsNew}}New question{{else}}{{.Form.Get "label"}}{{end}}</h1>
+
+<form method="post" action="/admin/events/{{.Event.ID}}/questions{{if not .IsNew}}/{{.QuestionID}}{{end}}">
+  {{template "csrf" .CSRFToken}}
+  <fieldset class="panel"{{if not $write}} disabled{{end}}>
+    <legend>Question</legend>
+    <div class="field">
+      <label for="label">Question</label>
+      <input id="label" name="label" value="{{.Form.Get "label"}}" required maxlength="300"
+             placeholder="Any dietary requirements?">
+      {{template "err" index .Errors "label"}}
+    </div>
+    <div class="field">
+      <label for="help">Help text</label>
+      <input id="help" name="help" value="{{.Form.Get "help"}}" maxlength="1000">
+      {{template "err" index .Errors "help"}}
+    </div>
+    <div class="field-row">
+      <div class="field narrow">
+        <label for="scope">Asked</label>
+        <select id="scope" name="scope">
+          {{range .Scopes}}<option value="{{.}}"{{if eq (print .) ($.Form.Get "scope")}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+        {{template "err" index .Errors "scope"}}
+      </div>
+      <div class="field narrow">
+        <label for="kind">Answer</label>
+        <select id="kind" name="kind">
+          {{range .Kinds}}<option value="{{.}}"{{if eq (print .) ($.Form.Get "kind")}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+        {{template "err" index .Errors "kind"}}
+      </div>
+    </div>
+    <div class="field">
+      <label for="options">Options</label>
+      <textarea id="options" name="options" rows="4">{{.Form.Get "options"}}</textarea>
+      {{template "err" index .Errors "options"}}
+      <small class="hint">For "Choose one" only: one option per line.</small>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="required" value="1" {{if .Form.On "required"}}checked{{end}}>
+        Required</label>
+    </div>
+  </fieldset>
+
+  {{if .TicketTypes}}
+  <fieldset class="panel"{{if not $write}} disabled{{end}}>
+    <legend>Only for these ticket types</legend>
+    <div class="checks">
+      {{range .TicketTypes}}
+      <label><input type="checkbox" name="ticket_type" value="{{.ID}}" {{if $.Ticked .ID}}checked{{end}}> {{.Name}}</label>
+      {{end}}
+    </div>
+    {{template "err" index .Errors "ticket_type"}}
+    <small class="hint">For a question asked of each attendee. Tick none to ask everyone.</small>
+  </fieldset>
+  {{end}}
+
+  <fieldset class="panel"{{if not $write}} disabled{{end}}>
+    <legend>Listing</legend>
+    <div class="field narrow">
+      <label for="position">Order</label>
+      <input id="position" name="position" inputmode="numeric" value="{{.Form.Get "position"}}">
+      {{template "err" index .Errors "position"}}
+    </div>
+    {{if not .IsNew}}
+    <div class="field">
+      <label><input type="checkbox" name="archived" value="1" {{if .Form.On "archived"}}checked{{end}}>
+        Archived — no longer asked; earlier answers are kept</label>
+    </div>
+    {{end}}
+  </fieldset>
+
+  {{if $write}}
+  <div class="actions">
+    <button type="submit">{{if .IsNew}}Add question{{else}}Save{{end}}</button>
+    <a class="button quiet" href="/admin/events/{{.Event.ID}}#questions">Cancel</a>
+  </div>
+  {{end}}
+</form>
+
+{{if and $write (not .IsNew)}}
+<form method="post" action="/admin/events/{{.Event.ID}}/questions/{{.QuestionID}}/delete">
+  {{template "csrf" .CSRFToken}}
+  <p class="muted"><small>If anybody has answered it the question is archived rather than
+  deleted, so their answers are kept.</small></p>
+  <button class="quiet" type="submit">Remove this question</button>
+</form>
+{{end}}
+
+{{end}}

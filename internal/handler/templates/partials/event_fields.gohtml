@@ -1,0 +1,101 @@
+{{/*
+  The event details form's fields, shared by the new-event page and the event
+  page. The caller supplies the <form>, the CSRF field and the buttons; dot is a
+  page carrying Form (formValues) and Errors.
+
+  Times are wall-clock times in the event's own zone — what an organiser means by
+  "7pm" — whichever zone the browser or the server happens to be in.
+*/}}
+{{define "event_fields"}}
+<fieldset class="panel">
+  <legend>About</legend>
+  <div class="field">
+    <label for="title">Title</label>
+    <input id="title" name="title" value="{{.Form.Get "title"}}" required maxlength="200">
+    {{template "err" index .Errors "title"}}
+  </div>
+  <div class="field">
+    <label for="slug">Link</label>
+    <input id="slug" name="slug" value="{{.Form.Get "slug"}}" maxlength="100"
+           placeholder="derived from the title when left blank">
+    {{template "err" index .Errors "slug"}}
+    <small class="hint">The last part of the event's address, /events/<em>link</em>. Changing
+    it later breaks links people already have.</small>
+  </div>
+  <div class="field">
+    <label for="summary">Summary</label>
+    <input id="summary" name="summary" value="{{.Form.Get "summary"}}" maxlength="300">
+    {{template "err" index .Errors "summary"}}
+    <small class="hint">One line for the events list.</small>
+  </div>
+  <div class="field">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="8">{{.Form.Get "description"}}</textarea>
+    {{template "err" index .Errors "description"}}
+    <small class="hint">A blank line starts a new paragraph.</small>
+  </div>
+</fieldset>
+
+<fieldset class="panel">
+  <legend>When and where</legend>
+  <div class="field-row">
+    <div class="field">
+      <label for="starts_at">Starts</label>
+      <input id="starts_at" name="starts_at" type="datetime-local" value="{{.Form.Get "starts_at"}}" required>
+      {{template "err" index .Errors "starts_at"}}
+    </div>
+    <div class="field">
+      <label for="ends_at">Ends</label>
+      <input id="ends_at" name="ends_at" type="datetime-local" value="{{.Form.Get "ends_at"}}" required>
+      {{template "err" index .Errors "ends_at"}}
+    </div>
+  </div>
+  <div class="field narrow">
+    <label for="timezone">Time zone</label>
+    <input id="timezone" name="timezone" value="{{.Form.Get "timezone"}}" required>
+    {{template "err" index .Errors "timezone"}}
+    <small class="hint">Where the event happens, e.g. Africa/Johannesburg.</small>
+  </div>
+  <div class="field">
+    <label for="venue">Venue</label>
+    <input id="venue" name="venue" value="{{.Form.Get "venue"}}" maxlength="200">
+    {{template "err" index .Errors "venue"}}
+  </div>
+  <div class="field">
+    <label for="address">Address</label>
+    <textarea id="address" name="address" rows="3">{{.Form.Get "address"}}</textarea>
+    {{template "err" index .Errors "address"}}
+  </div>
+</fieldset>
+
+<fieldset class="panel">
+  <legend>Registration</legend>
+  <div class="field-row">
+    <div class="field">
+      <label for="registration_opens_at">Opens</label>
+      <input id="registration_opens_at" name="registration_opens_at" type="datetime-local"
+             value="{{.Form.Get "registration_opens_at"}}">
+      {{template "err" index .Errors "registration_opens_at"}}
+      <small class="hint">Blank: as soon as it is published.</small>
+    </div>
+    <div class="field">
+      <label for="registration_closes_at">Closes</label>
+      <input id="registration_closes_at" name="registration_closes_at" type="datetime-local"
+             value="{{.Form.Get "registration_closes_at"}}">
+      {{template "err" index .Errors "registration_closes_at"}}
+      <small class="hint">Blank: when the event ends.</small>
+    </div>
+  </div>
+  <div class="field narrow">
+    <label for="capacity">Capacity</label>
+    <input id="capacity" name="capacity" inputmode="numeric" value="{{.Form.Get "capacity"}}">
+    {{template "err" index .Errors "capacity"}}
+    <small class="hint">The most people across every ticket type. Blank for no limit.</small>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="listed" value="1" {{if .Form.On "listed"}}checked{{end}}>
+      Show in the public events list</label>
+    <small class="hint">Untick for an event reachable only by its link.</small>
+  </div>
+</fieldset>
+{{end}}

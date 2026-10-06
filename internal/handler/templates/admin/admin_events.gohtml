@@ -1,0 +1,35 @@
+{{define "content"}}
+
+<div class="page-head">
+  <h1>Events</h1>
+  {{if .Can "events.write"}}<a class="button" href="/admin/events/new">New event</a>{{end}}
+</div>
+
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+
+{{if .Events}}
+<div class="scroll-x">
+  <table>
+    <thead>
+      <tr><th>Event</th><th>When</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+    {{range .Events}}
+      <tr>
+        <td>
+          <a href="/admin/events/{{.ID}}">{{.Title}}</a>
+          {{if not .Listed}}<br><small class="muted">Unlisted</small>{{end}}
+        </td>
+        <td>{{.When}}</td>
+        <td>{{template "event_status" .Status}}</td>
+        <td><a href="/admin/events/{{.ID}}">{{if $.Can "events.write"}}Manage{{else}}View{{end}}</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No events yet.{{if .Can "events.write"}} <a href="/admin/events/new">Create the first one.</a>{{end}}</p>
+{{end}}
+
+{{end}}

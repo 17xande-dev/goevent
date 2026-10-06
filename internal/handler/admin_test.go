@@ -18,6 +18,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/payment"
@@ -67,6 +68,7 @@ type app struct {
 	mail    *mailer.Fake
 	images  *blob.Fake
 	outbox  *outbox.Store
+	events  *events.Store
 
 	// pool is the database behind all of the above, for the tests that need to
 	// take it away — an outage is a response an admin page has to get right.
@@ -149,6 +151,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	}
 	log := slog.New(slog.DiscardHandler)
 	users := auth.NewStore(pool)
+	eventStore := events.NewStore(pool)
 	gateway := payment.NewFake()
 	mail := mailer.NewFake()
 	queue, err := outbox.New(pool, strings.Repeat("ab", 32))
@@ -159,6 +162,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 		Config:   cfg,
 		Log:      log,
 		Tmpl:     tmpl,
+		Events:   eventStore,
 		Gateways: registryOf(t, append([]payment.Gateway{gateway}, extraGateways...)...),
 		Mail:     mail,
 		Outbox:   queue,
@@ -184,7 +188,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	t.Cleanup(srv.Close)
 	return &app{
 		srv: srv, handler: h, gateway: gateway, mail: mail, images: images,
-		outbox: queue, users: users, pool: pool,
+		outbox: queue, users: users, pool: pool, events: eventStore,
 	}
 }
 
@@ -239,17 +243,22 @@ func signInAs(t *testing.T, srv *httptest.Server, email, password string) {
 	}
 }
 
-func TestAdmin_HomeRendersForAnySignedInRole(t *testing.T) {
+func TestAdmin_HomeIsTheEventsListForAnySignedInRole(t *testing.T) {
 	s := newApp(t)
 	mustAccount(t, s, "door@example.com", testPassword, auth.RoleCheckin)
 	signInAs(t, s.srv, "door@example.com", testPassword)
 
-	res, body := get(t, s.srv, "/admin/")
+	res, _ := get(t, s.srv, "/admin/")
+	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != adminHome {
+		t.Fatalf("GET /admin/ = %d %q, want 303 to %s", res.StatusCode, res.Header.Get("Location"), adminHome)
+	}
+	// A door volunteer's first page must not be a 403.
+	res, body := get(t, s.srv, adminHome)
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET /admin/ = %d %s", res.StatusCode, body)
+		t.Fatalf("GET %s as check-in = %d %s", adminHome, res.StatusCode, body)
 	}
 	if !strings.Contains(body, "Test Events") {
-		t.Errorf("admin home does not name the site:\n%s", body)
+		t.Errorf("the admin does not name the site:\n%s", excerpt(body))
 	}
 }
 

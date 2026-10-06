@@ -1,0 +1,133 @@
+{{define "content"}}
+{{$write := .Can "events.write"}}
+
+<a class="back" href="/admin/events">← Events</a>
+<div class="page-head">
+  <h1>{{.Event.Title}}</h1>
+  {{template "event_status" .Event.Status}}
+</div>
+
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+{{if .Problem}}<p class="notice problem">{{.Problem}}</p>{{end}}
+
+<dl class="facts">
+  <dt>When</dt>
+  <dd>{{.Event.When}} <small class="muted">({{.Event.Timezone}})</small></dd>
+  <dt>Public page</dt>
+  <dd>{{if .Event.Status.Public}}<a href="/events/{{.Event.Slug}}">/events/{{.Event.Slug}}</a>
+      {{else}}<span class="muted">/events/{{.Event.Slug}} — not visible until published</span>{{end}}</dd>
+</dl>
+
+{{if and $write .Next}}
+{{/*
+  One form per button, each naming its target status. The server checks the move
+  is allowed from where the event is now, so these are a convenience, not the rule.
+*/}}
+<div class="row">
+  {{range .Next}}
+  <form method="post" action="/admin/events/{{$.Event.ID}}/status">
+    {{template "csrf" $.CSRFToken}}
+    <input type="hidden" name="status" value="{{.}}">
+    <button type="submit"{{if or (eq . "cancelled") (eq . "draft")}} class="quiet"{{end}}>{{.Action}}</button>
+  </form>
+  {{end}}
+</div>
+{{end}}
+
+<h2 id="tickets">Ticket types</h2>
+{{if .TicketTypes}}
+<div class="scroll-x">
+  <table>
+    <thead><tr><th>Name</th><th class="num">Price</th><th class="num">Capacity</th><th></th><th></th></tr></thead>
+    <tbody>
+    {{range .TicketTypes}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td class="num">{{if .Free}}Free{{else}}{{$.Currency}} {{money .PriceCents}}{{end}}</td>
+        <td class="num">{{with .Capacity}}{{.}}{{else}}<span class="muted">No limit</span>{{end}}</td>
+        <td>{{if .Archived}}<span class="badge">Archived</span>{{else if .Hidden}}<span class="badge">Hidden</span>{{end}}</td>
+        <td><a href="/admin/events/{{$.Event.ID}}/tickets/{{.ID}}">{{if $write}}Edit{{else}}View{{end}}</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">None yet. An event needs at least one before it can be published.</p>
+{{end}}
+{{if $write}}<p><a class="button quiet" href="/admin/events/{{.Event.ID}}/tickets/new">Add a ticket type</a></p>{{end}}
+
+<h2 id="questions">Questions</h2>
+<p class="muted"><small>Every attendee is asked for a first and last name, and the person
+registering for an email address. These are anything else you need to know.</small></p>
+{{if .Questions}}
+<div class="scroll-x">
+  <table>
+    <thead><tr><th>Question</th><th>Asked</th><th>Answer</th><th></th><th></th></tr></thead>
+    <tbody>
+    {{range .Questions}}
+      <tr>
+        <td>{{.Label}}{{if .Required}} <small class="muted">(required)</small>{{end}}</td>
+        <td>{{.Scope.Label}}</td>
+        <td>{{.Kind.Label}}</td>
+        <td>{{if .Archived}}<span class="badge">Archived</span>{{end}}</td>
+        <td><a href="/admin/events/{{$.Event.ID}}/questions/{{.ID}}">{{if $write}}Edit{{else}}View{{end}}</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">None.</p>
+{{end}}
+{{if $write}}<p><a class="button quiet" href="/admin/events/{{.Event.ID}}/questions/new">Add a question</a></p>{{end}}
+
+<h2 id="image">Image</h2>
+{{if .Event.ImageKey}}
+<img class="event-image" src="{{image .Event.ImageKey}}" alt="">
+{{else}}
+<p class="muted">No image. Events without one show a plain header.</p>
+{{end}}
+{{if .ImageError}}<p class="notice problem">{{.ImageError}}</p>{{end}}
+{{if $write}}
+<form class="panel" method="post" action="/admin/events/{{.Event.ID}}/image" enctype="multipart/form-data">
+  {{template "csrf" .CSRFToken}}
+  <div class="field">
+    <label for="image">{{if .Event.ImageKey}}Replace the image{{else}}Upload an image{{end}}</label>
+    <input id="image" name="image" type="file" accept="{{.AcceptTypes}}" required>
+    <small class="hint">Up to {{.MaxUploadMB}} MB. Wide pictures work best.</small>
+  </div>
+  <div class="actions"><button type="submit">Upload</button></div>
+</form>
+{{if .Event.ImageKey}}
+<form method="post" action="/admin/events/{{.Event.ID}}/image/delete">
+  {{template "csrf" .CSRFToken}}
+  <button class="quiet" type="submit">Remove the image</button>
+</form>
+{{end}}
+{{end}}
+
+<h2 id="details">Event details</h2>
+<form method="post" action="/admin/events/{{.Event.ID}}">
+  {{template "csrf" .CSRFToken}}
+  {{/*
+    A disabled fieldset for a role that cannot save: the same page shows a viewer
+    what the event is. Presentation only — the POST is refused whatever this says.
+  */}}
+  <fieldset class="bare"{{if not $write}} disabled{{end}}>
+    {{template "event_fields" .}}
+  </fieldset>
+  {{if $write}}<div class="actions"><button type="submit">Save details</button></div>{{end}}
+</form>
+
+{{if and $write (eq .Event.Status "draft")}}
+<h2>Delete</h2>
+<form method="post" action="/admin/events/{{.Event.ID}}/delete">
+  {{template "csrf" .CSRFToken}}
+  <p class="muted"><small>Only an event nobody has registered for can be deleted. Once people
+  have, cancel it instead.</small></p>
+  <button class="quiet" type="submit">Delete this event</button>
+</form>
+{{end}}
+
+{{end}}

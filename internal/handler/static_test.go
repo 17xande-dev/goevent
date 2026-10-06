@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -281,10 +282,24 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 	withStaticDir(t, "")
 	s := setupApp(t)
 	other := mustAccount(t, s, "other@example.com", testPassword, "viewer")
+	e := createEvent(t, s, "Camp")
+	addTicket(t, s, e, ticketForm("Adult", "0"))
+	tts, _ := s.events.TicketTypes(t.Context(), e.ID)
+	post(t, s.srv, "/admin/events/"+e.ID+"/questions", url.Values{
+		"label": {"Dietary needs"}, "scope": {"attendee"}, "kind": {"text"},
+	})
+	qs, _ := s.events.Questions(t.Context(), e.ID)
+	if len(tts) != 1 || len(qs) != 1 {
+		t.Fatalf("fixture: %d ticket types, %d questions", len(tts), len(qs))
+	}
+	ev := "/admin/events/" + e.ID
 
 	var checked int
 	for _, path := range []string{
-		"/nope", "/admin/", "/admin/users", "/admin/users/new",
+		"/nope", "/admin/events", "/admin/events/new", ev,
+		ev + "/tickets/new", ev + "/tickets/" + tts[0].ID,
+		ev + "/questions/new", ev + "/questions/" + qs[0].ID,
+		"/admin/users", "/admin/users/new",
 		"/admin/users/" + other.ID + "/edit", "/admin/account",
 	} {
 		res, page := get(t, s.srv, path)
@@ -309,7 +324,7 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 			t.Errorf("GET %s carries an inline style or handler", path)
 		}
 	}
-	if checked < 7 {
+	if checked < 13 {
 		t.Fatalf("only %d pages checked", checked)
 	}
 }

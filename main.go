@@ -20,6 +20,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/db"
+	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/handler"
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
@@ -135,6 +136,7 @@ func run() error {
 		Config:   cfg,
 		Log:      log,
 		Tmpl:     tmpl,
+		Events:   events.NewStore(pool),
 		Gateways: gateways,
 		Mail:     mail,
 		Outbox:   queue,

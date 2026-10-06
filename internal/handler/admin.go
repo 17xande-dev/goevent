@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
+	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/payment"
@@ -23,6 +25,8 @@ type Handler struct {
 	cfg  config.Config
 	log  *slog.Logger
 	tmpl *Templates
+	// events is what people register for: events, ticket types and questions.
+	events *events.Store
 	// gateways is every payment provider this deployment has configured, in the
 	// order the checkout offers them. A registry rather than one gateway because
 	// a deployment may offer more than one, and because the callback route has to
@@ -91,6 +95,7 @@ type Deps struct {
 	Config   config.Config
 	Log      *slog.Logger
 	Tmpl     *Templates
+	Events   *events.Store
 	Gateways payment.Registry
 	Mail     mailer.Sender
 	Outbox   *outbox.Store
@@ -101,7 +106,7 @@ type Deps struct {
 func New(d Deps) *Handler {
 	cfg, log := d.Config, d.Log
 	h := &Handler{
-		cfg: cfg, log: log, tmpl: d.Tmpl, gateways: d.Gateways, mail: d.Mail,
+		cfg: cfg, log: log, tmpl: d.Tmpl, events: d.Events, gateways: d.Gateways, mail: d.Mail,
 		blob: d.Images, users: d.Users, outbox: d.Outbox,
 	}
 	// Storage is optional and must be non-nil, so that a caller omitting it gets
@@ -234,8 +239,32 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 		mux.Handle(pattern, protect(h.requirePerm(perm, handler)))
 	}
 	admin("GET /admin/{$}", auth.PermRead, func(w http.ResponseWriter, r *http.Request) {
-		h.render(w, r, http.StatusOK, "admin_home", h.newPage(r, "Admin"))
+		http.Redirect(w, r, adminHome, http.StatusSeeOther)
 	})
+	// Events, their ticket types and their questions. See admin_events.go. The
+	// new-thing forms are events.write rather than read: they exist only to
+	// create, and offering one to a role that cannot submit it is a page whose one
+	// button is a 403. The edit pages stay read, because they are also where a
+	// viewer sees what a thing is.
+	admin("GET /admin/events", auth.PermRead, h.adminEventList)
+	admin("GET /admin/events/new", auth.PermEventsWrite, h.adminEventNew)
+	admin("POST /admin/events", auth.PermEventsWrite, h.adminEventCreate)
+	admin("GET /admin/events/{id}", auth.PermRead, h.adminEventShow)
+	admin("POST /admin/events/{id}", auth.PermEventsWrite, h.adminEventUpdate)
+	admin("POST /admin/events/{id}/status", auth.PermEventsWrite, h.adminEventStatus)
+	admin("POST /admin/events/{id}/delete", auth.PermEventsWrite, h.adminEventDelete)
+	admin("POST /admin/events/{id}/image", auth.PermEventsWrite, h.adminEventImageUpload)
+	admin("POST /admin/events/{id}/image/delete", auth.PermEventsWrite, h.adminEventImageDelete)
+	admin("GET /admin/events/{id}/tickets/new", auth.PermEventsWrite, h.adminTicketNew)
+	admin("POST /admin/events/{id}/tickets", auth.PermEventsWrite, h.adminTicketCreate)
+	admin("GET /admin/events/{id}/tickets/{ticketID}", auth.PermRead, h.adminTicketEdit)
+	admin("POST /admin/events/{id}/tickets/{ticketID}", auth.PermEventsWrite, h.adminTicketUpdate)
+	admin("POST /admin/events/{id}/tickets/{ticketID}/delete", auth.PermEventsWrite, h.adminTicketDelete)
+	admin("GET /admin/events/{id}/questions/new", auth.PermEventsWrite, h.adminQuestionNew)
+	admin("POST /admin/events/{id}/questions", auth.PermEventsWrite, h.adminQuestionCreate)
+	admin("GET /admin/events/{id}/questions/{questionID}", auth.PermRead, h.adminQuestionEdit)
+	admin("POST /admin/events/{id}/questions/{questionID}", auth.PermEventsWrite, h.adminQuestionUpdate)
+	admin("POST /admin/events/{id}/questions/{questionID}/delete", auth.PermEventsWrite, h.adminQuestionDelete)
 	// Administrator accounts. See internal/handler/admin_users.go — accounts are
 	// disabled, never deleted, and nobody may change their own role, disable
 	// themselves, or reset their own password from these pages.
@@ -339,4 +368,14 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, nam
 	if _, err := w.Write(body); err != nil {
 		h.logger(r).Error("writing a page failed", "template", name, "path", r.URL.Path, "error", err)
 	}
+}
+
+// storeError maps a store error onto a response: missing rows are 404s, and
+// anything else is a genuine server fault.
+func (h *Handler) storeError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, events.ErrNotFound) {
+		h.notFound(w, r)
+		return
+	}
+	h.serverError(w, r, err)
 }

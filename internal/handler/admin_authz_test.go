@@ -24,7 +24,7 @@ func TestAdminRoutes_EveryProtectedRouteRefusesAnonymous(t *testing.T) {
 
 	// A derived list that came back empty would let this pass while testing
 	// nothing at all. The number is a floor, not a count to keep updated.
-	if len(routes) < 9 {
+	if len(routes) < 25 {
 		t.Fatalf("AdminProtectedRoutes returned %d routes; the admin has more than that", len(routes))
 	}
 
@@ -63,7 +63,9 @@ func TestAdminRoutes_RolesGetTheirPermissions(t *testing.T) {
 	}
 
 	cases := []permCase{
-		{auth.PermRead, http.MethodGet, "/admin/", nil},
+		{auth.PermRead, http.MethodGet, "/admin/events", nil},
+		{auth.PermEventsWrite, http.MethodGet, "/admin/events/new", nil},
+		{auth.PermEventsWrite, http.MethodPost, "/admin/events", url.Values{"title": {"An event"}}},
 		{auth.PermUsersWrite, http.MethodGet, "/admin/users", nil},
 	}
 

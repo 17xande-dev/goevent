@@ -1,0 +1,18 @@
+{{define "content"}}
+
+<a class="back" href="/admin/events">← Events</a>
+<h1>New event</h1>
+
+<p class="muted">It starts as a draft that only administrators can see. Add its ticket
+types, then publish it.</p>
+
+<form method="post" action="/admin/events">
+  {{template "csrf" .CSRFToken}}
+  {{template "event_fields" .}}
+  <div class="actions">
+    <button type="submit">Create event</button>
+    <a class="button quiet" href="/admin/events">Cancel</a>
+  </div>
+</form>
+
+{{end}}

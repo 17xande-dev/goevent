@@ -77,14 +77,14 @@ func TestValidate_IgnoresAClaimedType(t *testing.T) {
 }
 
 func TestImageKey(t *testing.T) {
-	const productID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+	const eventID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 
-	key, err := ImageKey(productID, ".jpg")
+	key, err := ImageKey(eventID, ".jpg")
 	if err != nil {
 		t.Fatalf("ImageKey: %v", err)
 	}
-	if !strings.HasPrefix(key, "products/"+productID+"/") {
-		t.Errorf("key %q is not under the product's prefix", key)
+	if !strings.HasPrefix(key, "events/"+eventID+"/") {
+		t.Errorf("key %q is not under the event's prefix", key)
 	}
 	if !strings.HasSuffix(key, ".jpg") {
 		t.Errorf("key %q lost its extension", key)
@@ -94,7 +94,7 @@ func TestImageKey(t *testing.T) {
 	// new URL rather than a cache purge this store cannot perform.
 	seen := map[string]bool{}
 	for range 100 {
-		k, err := ImageKey(productID, ".jpg")
+		k, err := ImageKey(eventID, ".jpg")
 		if err != nil {
 			t.Fatalf("ImageKey: %v", err)
 		}
@@ -106,8 +106,8 @@ func TestImageKey(t *testing.T) {
 
 	// An extension without its dot is accepted, since callers get it from Validate
 	// either way.
-	if k, err := ImageKey(productID, "png"); err != nil || !strings.HasSuffix(k, ".png") {
-		t.Errorf("ImageKey(%q, \"png\") = %q, %v", productID, k, err)
+	if k, err := ImageKey(eventID, "png"); err != nil || !strings.HasSuffix(k, ".png") {
+		t.Errorf("ImageKey(%q, \"png\") = %q, %v", eventID, k, err)
 	}
 }
 

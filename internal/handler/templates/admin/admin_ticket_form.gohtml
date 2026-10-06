@@ -1,0 +1,94 @@
+{{define "content"}}
+{{$write := .Can "events.write"}}
+
+<a class="back" href="/admin/events/{{.Event.ID}}#tickets">← {{.Event.Title}}</a>
+<h1>{{if .IsNew}}New ticket type{{else}}{{.Form.Get "name"}}{{end}}</h1>
+
+<form method="post" action="/admin/events/{{.Event.ID}}/tickets{{if not .IsNew}}/{{.TicketID}}{{end}}">
+  {{template "csrf" .CSRFToken}}
+  <fieldset class="panel"{{if not $write}} disabled{{end}}>
+    <legend>Ticket</legend>
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" name="name" value="{{.Form.Get "name"}}" required maxlength="120"
+             placeholder="Adult, Child, Early bird…">
+      {{template "err" index .Errors "name"}}
+    </div>
+    <div class="field">
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="3">{{.Form.Get "description"}}</textarea>
+      {{template "err" index .Errors "description"}}
+    </div>
+    <div class="field-row">
+      <div class="field narrow">
+        <label for="price">Price ({{.Currency}})</label>
+        <input id="price" name="price" inputmode="decimal" value="{{.Form.Get "price"}}" required>
+        {{template "err" index .Errors "price"}}
+        <small class="hint">0 for a free ticket.</small>
+      </div>
+      <div class="field narrow">
+        <label for="capacity">Capacity</label>
+        <input id="capacity" name="capacity" inputmode="numeric" value="{{.Form.Get "capacity"}}">
+        {{template "err" index .Errors "capacity"}}
+        <small class="hint">Blank for no limit beyond the event's own.</small>
+      </div>
+      <div class="field narrow">
+        <label for="max_per_registration">Most per registration</label>
+        <input id="max_per_registration" name="max_per_registration" inputmode="numeric"
+               value="{{.Form.Get "max_per_registration"}}" required>
+        {{template "err" index .Errors "max_per_registration"}}
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="panel"{{if not $write}} disabled{{end}}>
+    <legend>Availability</legend>
+    <div class="field-row">
+      <div class="field">
+        <label for="sales_start_at">On sale from</label>
+        <input id="sales_start_at" name="sales_start_at" type="datetime-local" value="{{.Form.Get "sales_start_at"}}">
+        {{template "err" index .Errors "sales_start_at"}}
+      </div>
+      <div class="field">
+        <label for="sales_end_at">On sale until</label>
+        <input id="sales_end_at" name="sales_end_at" type="datetime-local" value="{{.Form.Get "sales_end_at"}}">
+        {{template "err" index .Errors "sales_end_at"}}
+      </div>
+    </div>
+    <small class="hint">In the event's time zone, {{.Event.Timezone}}. Blank: whenever registration is open.</small>
+    <div class="field">
+      <label><input type="checkbox" name="hidden" value="1" {{if .Form.On "hidden"}}checked{{end}}>
+        Hidden — never offered publicly</label>
+    </div>
+    {{if not .IsNew}}
+    <div class="field">
+      <label><input type="checkbox" name="archived" value="1" {{if .Form.On "archived"}}checked{{end}}>
+        Archived — retired, kept only for people who already hold one</label>
+    </div>
+    {{end}}
+    <div class="field narrow">
+      <label for="position">Order</label>
+      <input id="position" name="position" inputmode="numeric" value="{{.Form.Get "position"}}">
+      {{template "err" index .Errors "position"}}
+      <small class="hint">Lower numbers are listed first.</small>
+    </div>
+  </fieldset>
+
+  {{if $write}}
+  <div class="actions">
+    <button type="submit">{{if .IsNew}}Add ticket type{{else}}Save{{end}}</button>
+    <a class="button quiet" href="/admin/events/{{.Event.ID}}#tickets">Cancel</a>
+  </div>
+  {{end}}
+</form>
+
+{{if and $write (not .IsNew)}}
+<form method="post" action="/admin/events/{{.Event.ID}}/tickets/{{.TicketID}}/delete">
+  {{template "csrf" .CSRFToken}}
+  <p class="muted"><small>If anybody already holds this ticket type it is archived rather
+  than deleted.</small></p>
+  <button class="quiet" type="submit">Remove this ticket type</button>
+</form>
+{{end}}
+
+{{end}}
