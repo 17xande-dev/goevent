@@ -91,11 +91,14 @@ type Config struct {
 	// event organiser. Empty means the registrant's confirmation is the only mail
 	// sent, and the organiser finds registrations in the admin instead.
 	NotifyEmail string
-	// EmailQueueKey encrypts pending confirmations, including their ticket codes.
-	// Keep it across restarts and with backups until the queue is empty.
-	EmailQueueKey string
+	// SecretKey is the server's one secret, 32 bytes as hex. Separate keys are
+	// derived from it for encrypting the email queue and for signing manage
+	// links and ticket codes. Changing it invalidates every link and ticket
+	// already sent and strands any queued email, so keep it — and back it up
+	// with the database.
+	SecretKey string
 
-	// Blob is object storage for product images.
+	// Blob is object storage for event images.
 	Blob Blob
 
 	// ImageDir stores product images in a local directory served by this server,
@@ -421,9 +424,9 @@ func Load() (Config, error) {
 			CallbackPerMinute: 120,
 			StatusPerMinute:   30,
 		},
-		NotifyEmail:   strings.TrimSpace(os.Getenv("NOTIFY_EMAIL")),
-		EmailQueueKey: strings.TrimSpace(sec.get("EMAIL_QUEUE_KEY")),
-		ImageDir:      strings.TrimSpace(os.Getenv("IMAGE_DIR")),
+		NotifyEmail: strings.TrimSpace(os.Getenv("NOTIFY_EMAIL")),
+		SecretKey:   strings.TrimSpace(sec.get("SECRET_KEY")),
+		ImageDir:    strings.TrimSpace(os.Getenv("IMAGE_DIR")),
 		Blob: Blob{
 			Endpoint:      strings.TrimSpace(os.Getenv("BLOB_ENDPOINT")),
 			Bucket:        strings.TrimSpace(os.Getenv("BLOB_BUCKET")),
@@ -483,8 +486,8 @@ func Load() (Config, error) {
 	if c.DatabaseURL == "" {
 		missing = append(missing, "DATABASE_URL")
 	}
-	if c.EmailQueueKey == "" {
-		missing = append(missing, "EMAIL_QUEUE_KEY")
+	if c.SecretKey == "" {
+		missing = append(missing, "SECRET_KEY")
 	}
 	// Each gateway's credentials are required only when that gateway is switched
 	// on, so a SnapScan-only store needs no PayFast account and the reverse.
@@ -506,8 +509,8 @@ func Load() (Config, error) {
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("config: required env vars not set: %s", strings.Join(missing, ", "))
 	}
-	if key, err := hex.DecodeString(c.EmailQueueKey); err != nil || len(key) != 32 {
-		return Config{}, errors.New("config: EMAIL_QUEUE_KEY must be 64 hexadecimal characters; generate with openssl rand -hex 32")
+	if key, err := hex.DecodeString(c.SecretKey); err != nil || len(key) != 32 {
+		return Config{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters; generate with openssl rand -hex 32")
 	}
 
 	// There is no admin credential in the environment any more: accounts live in
@@ -879,7 +882,7 @@ func checkLogLevel(level string) error {
 // into a compose file. Identifiers that sit next to them (a merchant id, an
 // access key id, a snap code) are not on this list: they are not secret.
 var secretKeys = []string{
-	"EMAIL_QUEUE_KEY",
+	"SECRET_KEY",
 	"DATABASE_URL",
 	"SETUP_TOKEN",
 	"PAYFAST_MERCHANT_KEY",

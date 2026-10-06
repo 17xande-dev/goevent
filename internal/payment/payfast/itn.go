@@ -109,7 +109,7 @@ func (g *Gateway) ParseCallback(ctx context.Context, n payment.Notification) (pa
 
 	status := field(signed, fieldStatus)
 	return payment.Callback{
-		OrderID:     field(signed, fieldPaymentID),
+		PaymentID:   field(signed, fieldPaymentID),
 		Ref:         field(signed, fieldGatewayRef),
 		Status:      status,
 		Outcome:     outcome(status),

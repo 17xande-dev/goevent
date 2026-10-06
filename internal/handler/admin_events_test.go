@@ -217,8 +217,8 @@ func TestAdminTickets_RemovingAHeldTypeArchivesIt(t *testing.T) {
 	var regID string
 	if err := s.pool.QueryRow(t.Context(), `
 INSERT INTO registrations (event_id, reference, contact_first_name, contact_last_name, contact_email,
-    total_cents, currency, hold_expires_at, checkout_key, manage_token_hash)
-VALUES ($1, 'AAA-111', 'A', 'B', 'a@example.com', 100, 'ZAR', now(), 'k', '\x02') RETURNING id`, e.ID).Scan(&regID); err != nil {
+    total_cents, currency, hold_expires_at, checkout_key)
+VALUES ($1, 'AAA-111', 'A', 'B', 'a@example.com', 100, 'ZAR', now(), 'k') RETURNING id`, e.ID).Scan(&regID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(t.Context(), `

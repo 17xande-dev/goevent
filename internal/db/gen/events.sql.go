@@ -47,10 +47,11 @@ func (q *Queries) ArchiveTicketType(ctx context.Context, arg ArchiveTicketTypePa
 const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (
     slug, title, summary, description, venue, address, starts_at, ends_at,
-    timezone, capacity, listed, registration_opens_at, registration_closes_at
+    timezone, capacity, listed, registration_opens_at, registration_closes_at,
+    pay_later, pay_later_instructions
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-) RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+) RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at
 `
 
 type CreateEventParams struct {
@@ -67,6 +68,8 @@ type CreateEventParams struct {
 	Listed               bool
 	RegistrationOpensAt  *time.Time
 	RegistrationClosesAt *time.Time
+	PayLater             bool
+	PayLaterInstructions string
 }
 
 func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error) {
@@ -84,6 +87,8 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 		arg.Listed,
 		arg.RegistrationOpensAt,
 		arg.RegistrationClosesAt,
+		arg.PayLater,
+		arg.PayLaterInstructions,
 	)
 	var i Event
 	err := row.Scan(
@@ -103,6 +108,8 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -260,7 +267,7 @@ func (q *Queries) DeleteTicketType(ctx context.Context, arg DeleteTicketTypePara
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at FROM events WHERE id = $1
+SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at FROM events WHERE id = $1
 `
 
 func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
@@ -283,6 +290,8 @@ func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -290,7 +299,7 @@ func (q *Queries) GetEvent(ctx context.Context, id string) (Event, error) {
 }
 
 const getEventBySlug = `-- name: GetEventBySlug :one
-SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at FROM events WHERE slug = $1
+SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at FROM events WHERE slug = $1
 `
 
 func (q *Queries) GetEventBySlug(ctx context.Context, slug string) (Event, error) {
@@ -313,6 +322,8 @@ func (q *Queries) GetEventBySlug(ctx context.Context, slug string) (Event, error
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -379,7 +390,7 @@ func (q *Queries) GetTicketType(ctx context.Context, arg GetTicketTypeParams) (T
 }
 
 const listEvents = `-- name: ListEvents :many
-SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at FROM events ORDER BY starts_at DESC, id
+SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at FROM events ORDER BY starts_at DESC, id
 `
 
 func (q *Queries) ListEvents(ctx context.Context) ([]Event, error) {
@@ -408,6 +419,58 @@ func (q *Queries) ListEvents(ctx context.Context) ([]Event, error) {
 			&i.Listed,
 			&i.RegistrationOpensAt,
 			&i.RegistrationClosesAt,
+			&i.PayLater,
+			&i.PayLaterInstructions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublicEvents = `-- name: ListPublicEvents :many
+SELECT id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at FROM events
+WHERE listed AND status <> 'draft' AND ends_at > now()
+ORDER BY starts_at, id
+`
+
+// What the public list shows: listed events that are not drafts and have not
+// ended. A closed or cancelled one stays listed until it is over, saying so,
+// rather than vanishing from under somebody who was about to register.
+func (q *Queries) ListPublicEvents(ctx context.Context) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listPublicEvents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Event{}
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Summary,
+			&i.Description,
+			&i.Venue,
+			&i.Address,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Timezone,
+			&i.ImageKey,
+			&i.Capacity,
+			&i.Status,
+			&i.Listed,
+			&i.RegistrationOpensAt,
+			&i.RegistrationClosesAt,
+			&i.PayLater,
+			&i.PayLaterInstructions,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -497,7 +560,7 @@ func (q *Queries) ListTicketTypes(ctx context.Context, eventID string) ([]Ticket
 }
 
 const setEventImage = `-- name: SetEventImage :one
-UPDATE events SET image_key = $2, updated_at = now() WHERE id = $1 RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at
+UPDATE events SET image_key = $2, updated_at = now() WHERE id = $1 RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at
 `
 
 type SetEventImageParams struct {
@@ -525,6 +588,8 @@ func (q *Queries) SetEventImage(ctx context.Context, arg SetEventImageParams) (E
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -537,7 +602,7 @@ WHERE events.id = $2 AND events.status = $3::text
   AND ($1::text <> 'published' OR EXISTS (
       SELECT 1 FROM ticket_types t
       WHERE t.event_id = events.id AND NOT t.archived AND NOT t.hidden))
-RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at
+RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at
 `
 
 type TransitionEventParams struct {
@@ -570,6 +635,8 @@ func (q *Queries) TransitionEvent(ctx context.Context, arg TransitionEventParams
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -580,9 +647,10 @@ const updateEvent = `-- name: UpdateEvent :one
 UPDATE events SET
     slug = $2, title = $3, summary = $4, description = $5, venue = $6, address = $7,
     starts_at = $8, ends_at = $9, timezone = $10, capacity = $11, listed = $12,
-    registration_opens_at = $13, registration_closes_at = $14, updated_at = now()
+    registration_opens_at = $13, registration_closes_at = $14,
+    pay_later = $15, pay_later_instructions = $16, updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, created_at, updated_at
+RETURNING id, slug, title, summary, description, venue, address, starts_at, ends_at, timezone, image_key, capacity, status, listed, registration_opens_at, registration_closes_at, pay_later, pay_later_instructions, created_at, updated_at
 `
 
 type UpdateEventParams struct {
@@ -600,6 +668,8 @@ type UpdateEventParams struct {
 	Listed               bool
 	RegistrationOpensAt  *time.Time
 	RegistrationClosesAt *time.Time
+	PayLater             bool
+	PayLaterInstructions string
 }
 
 // Status and image are not written here: each has its own action, so saving the
@@ -620,6 +690,8 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 		arg.Listed,
 		arg.RegistrationOpensAt,
 		arg.RegistrationClosesAt,
+		arg.PayLater,
+		arg.PayLaterInstructions,
 	)
 	var i Event
 	err := row.Scan(
@@ -639,6 +711,8 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 		&i.Listed,
 		&i.RegistrationOpensAt,
 		&i.RegistrationClosesAt,
+		&i.PayLater,
+		&i.PayLaterInstructions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

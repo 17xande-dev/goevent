@@ -58,8 +58,8 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-events@goevent.example}
       NOTIFY_EMAIL: ${NOTIFY_EMAIL:-organiser@goevent.example}
       # Public development key, never use for a live deployment. Production
-      # requires a generated EMAIL_QUEUE_KEY (or EMAIL_QUEUE_KEY_FILE).
-      EMAIL_QUEUE_KEY: ${EMAIL_QUEUE_KEY:-abababababababababababababababababababababababababababababababab}
+      # requires a generated SECRET_KEY (or SECRET_KEY_FILE).
+      SECRET_KEY: ${SECRET_KEY:-abababababababababababababababababababababababababababababababab}
       IMAGE_DIR: /images
       # An older .env may still contain S3 settings. Development deliberately
       # uses disk; choose deploy/ for an R2-backed installation.

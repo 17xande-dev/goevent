@@ -37,7 +37,7 @@ DEV_ENV = DATABASE_URL="$(TEST_DATABASE_URL)" \
 	SNAPSCAN_API_KEY="$(SNAPSCAN_API_KEY)" \
 	SNAPSCAN_WEBHOOK_AUTH_KEY="$(SNAPSCAN_WEBHOOK_AUTH_KEY)" \
 	SNAPSCAN_VALIDATION_KEY="$(SNAPSCAN_VALIDATION_KEY)" \
-	EMAIL_QUEUE_KEY="$(EMAIL_QUEUE_KEY)" \
+	SECRET_KEY="$(SECRET_KEY)" \
 	IMAGE_DIR="$(IMAGE_DIR)" \
 	SMTP_HOST="$(SMTP_HOST)" \
 	SMTP_PORT="$(SMTP_PORT)" \
@@ -50,7 +50,7 @@ DEV_ENV = DATABASE_URL="$(TEST_DATABASE_URL)" \
 # compose relay, which `make run` starts alongside postgres.
 IMAGE_DIR ?= .local/images
 # Public development key; deployments must generate and back up their own.
-EMAIL_QUEUE_KEY ?= abababababababababababababababababababababababababababababababab
+SECRET_KEY ?= abababababababababababababababababababababababababababababababab
 SMTP_HOST ?= localhost
 SMTP_PORT ?= 1026
 SMTP_TLS ?= none

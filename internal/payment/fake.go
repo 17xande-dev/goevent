@@ -74,12 +74,12 @@ func (f *Fake) Handover(r Request) (Handover, error) {
 	f.mu.Unlock()
 
 	if f.Kind == HandoverLink {
-		action := "https://gateway.example/qr/fake?id=" + url.QueryEscape(r.OrderID) +
+		action := "https://gateway.example/qr/fake?id=" + url.QueryEscape(r.PaymentID) +
 			"&amount=" + strconv.FormatInt(r.AmountCents, 10)
 		return Handover{
 			Kind:       HandoverLink,
 			Action:     action,
-			QRImageURL: "https://gateway.example/qr/fake.svg?id=" + url.QueryEscape(r.OrderID),
+			QRImageURL: "https://gateway.example/qr/fake.svg?id=" + url.QueryEscape(r.PaymentID),
 		}, nil
 	}
 
@@ -87,7 +87,7 @@ func (f *Fake) Handover(r Request) (Handover, error) {
 		Kind:   HandoverPostForm,
 		Action: "https://gateway.example/pay",
 		Fields: []Field{
-			{Name: "order_id", Value: r.OrderID},
+			{Name: "payment_id", Value: r.PaymentID},
 			{Name: "amount", Value: strconv.FormatInt(r.AmountCents, 10)},
 			{Name: "signature", Value: "fake-signature"},
 		},
@@ -137,7 +137,7 @@ func (f *Fake) ParseCallback(_ context.Context, n Notification) (Callback, error
 	}
 
 	return Callback{
-		OrderID:     values.Get("order_id"),
+		PaymentID:   values.Get("payment_id"),
 		Ref:         values.Get("ref"),
 		Status:      status,
 		Outcome:     outcome,
@@ -149,11 +149,11 @@ func (f *Fake) ParseCallback(_ context.Context, n Notification) (Callback, error
 
 // FakeCallbackBody builds the body a Fake understands, so tests write a callback
 // the same way in every one of them.
-func FakeCallbackBody(orderID, ref, status string, amountCents int64) []byte {
+func FakeCallbackBody(paymentID, ref, status string, amountCents int64) []byte {
 	return []byte(url.Values{
-		"order_id": {orderID},
-		"ref":      {ref},
-		"status":   {status},
-		"amount":   {FormatAmount(amountCents)},
+		"payment_id": {paymentID},
+		"ref":        {ref},
+		"status":     {status},
+		"amount":     {FormatAmount(amountCents)},
 	}.Encode())
 }

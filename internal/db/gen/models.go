@@ -44,19 +44,18 @@ type Answer struct {
 }
 
 type Attendee struct {
-	ID               string
-	RegistrationID   string
-	TicketTypeID     string
-	FirstName        string
-	LastName         string
-	Email            string
-	TicketName       string
-	UnitPriceCents   int64
-	TicketSecretHash []byte
-	Status           string
-	CheckedInAt      *time.Time
-	CheckedInBy      *string
-	Position         int
+	ID             string
+	RegistrationID string
+	TicketTypeID   string
+	FirstName      string
+	LastName       string
+	Email          string
+	TicketName     string
+	UnitPriceCents int64
+	Status         string
+	CheckedInAt    *time.Time
+	CheckedInBy    *string
+	Position       int
 }
 
 type EmailJob struct {
@@ -87,6 +86,8 @@ type Event struct {
 	Listed               bool
 	RegistrationOpensAt  *time.Time
 	RegistrationClosesAt *time.Time
+	PayLater             bool
+	PayLaterInstructions string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }
@@ -101,7 +102,7 @@ type Payment struct {
 	GatewayRef     *string
 	GatewayStatus  string
 	GatewayAmount  string
-	GatewayPayload []byte
+	GatewayPayload string
 	RecordedBy     *string
 	Note           string
 	CreatedAt      time.Time
@@ -135,8 +136,8 @@ type Registration struct {
 	TotalCents       int64
 	Currency         string
 	HoldExpiresAt    time.Time
+	PayLater         bool
 	CheckoutKey      string
-	ManageTokenHash  []byte
 	Oversold         bool
 	Emailed          bool
 	CreatedAt        time.Time

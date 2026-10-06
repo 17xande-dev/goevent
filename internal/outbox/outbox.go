@@ -24,7 +24,7 @@ type Store struct {
 func New(pool *pgxpool.Pool, key string) (*Store, error) {
 	b, err := hex.DecodeString(key)
 	if err != nil || len(b) != 32 {
-		return nil, errors.New("EMAIL_QUEUE_KEY must be 64 hexadecimal characters (32 random bytes)")
+		return nil, errors.New("SECRET_KEY must be 64 hexadecimal characters (32 random bytes)")
 	}
 	block, err := aes.NewCipher(b)
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *Store) DeliverOne(ctx context.Context, send func(context.Context, strin
 	}
 
 	plain, deliveryErr := s.aead.Open(nil, nil, job.Payload, []byte(job.RegistrationID+":"+job.Kind))
-	reason := "Unable to decrypt queued email. Check EMAIL_QUEUE_KEY."
+	reason := "Unable to decrypt queued email. Check SECRET_KEY."
 	if deliveryErr == nil {
 		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		deliveryErr = send(sendCtx, job.Kind, plain)

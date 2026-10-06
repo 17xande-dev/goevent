@@ -1,0 +1,53 @@
+{{/*
+  The hand-over to the gateway, in the two shapes a gateway comes in.
+
+  A form post (PayFast) is a real cross-origin submission, not a redirect, because
+  the gateway wants the fields posted to it — which is why the CSP names the
+  gateway's origin in form-action, and why the vendored submit-on-load script
+  exists: with script-src 'self' and no inline script, an onload attribute would
+  simply be blocked. The button is not a fallback nobody sees: without JavaScript
+  it is the whole mechanism.
+
+  A link (SnapScan) is not submitted for the registrant at all: the page is the
+  instructions. It shows the QR code for a desktop, where the phone doing the
+  paying is not the thing reading the screen, and the button for a phone, where
+  the same URL opens the app directly.
+*/}}
+{{define "content"}}
+
+{{if .Handover.IsLink}}
+
+<h1>Pay with {{.GatewayLabel}}</h1>
+<p>{{.Event.Title}} · reference <strong>{{.Registration.Reference}}</strong> —
+  {{.Payment.Currency}} {{money .Payment.AmountCents}}</p>
+
+<div class="qr-handover">
+  <a class="button qr-handover-button" href="{{.Handover.Action}}">Open {{.GatewayLabel}} to pay</a>
+  <figure class="qr-handover-code">
+    {{/* No width or height: SnapScan's documentation says setting them makes the code unscannable. */}}
+    <img src="{{.Handover.QRImageURL}}" alt="{{.GatewayLabel}} payment code for {{.Registration.Reference}}">
+    <figcaption>Scan this with the {{.GatewayLabel}} app on your phone.</figcaption>
+  </figure>
+</div>
+
+<div id="payment-status" hx-get="/checkout/status?payment={{.Payment.ID}}" hx-trigger="load delay:5s" hx-swap="outerHTML">
+  <p class="muted">Your places are held for 15 minutes. Your tickets are emailed as soon as the payment goes through.</p>
+</div>
+
+{{else}}
+
+<h1>Sending you to pay</h1>
+<p>{{.Event.Title}} · reference <strong>{{.Registration.Reference}}</strong> —
+  {{.Payment.Currency}} {{money .Payment.AmountCents}}</p>
+<p>You are being handed over to {{.GatewayLabel}} to pay. If nothing happens, press the button.</p>
+
+<form id="gateway-redirect" method="post" action="{{.Handover.Action}}">
+  {{range .Handover.Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
+  {{end}}
+  <button type="submit">Continue to {{.GatewayLabel}}</button>
+</form>
+<script src="{{asset "redirect.js"}}" defer></script>
+
+{{end}}
+
+{{end}}

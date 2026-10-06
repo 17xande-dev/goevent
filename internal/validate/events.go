@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/events"
@@ -39,6 +40,11 @@ func Event(e events.Event) FormErrors {
 	if o, c := e.RegistrationOpensAt, e.RegistrationClosesAt; o != nil && c != nil && !c.After(*o) {
 		errs.Add("registration_closes_at", "Closes before it opens.")
 	}
+	// Somebody who chooses to pay later has to be told how.
+	if e.PayLater && strings.TrimSpace(e.PayLaterInstructions) == "" {
+		errs.Add("pay_later_instructions", "Say how to pay — bank details and the reference to quote.")
+	}
+	maxLen(errs, "pay_later_instructions", e.PayLaterInstructions, 2_000)
 	return errs
 }
 

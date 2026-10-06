@@ -1,0 +1,104 @@
+{{/*
+  The registration form. Each attendee is a numbered block (a0., a1., …) carrying
+  its ticket type in a hidden field, so the POST rebuilds the slots this page drew.
+  No price is in the form: the checkout reads prices from the database.
+*/}}
+{{define "content"}}
+
+<a class="back" href="/events/{{.Event.Slug}}">← {{.Event.Title}}</a>
+<h1>Register</h1>
+<p class="muted">{{.Event.Title}} · {{.Event.When}}</p>
+
+{{if .Problem}}<p class="notice problem">{{.Problem}}</p>{{end}}
+{{if .Errors.Any}}<p class="notice problem">Please check the highlighted fields.</p>{{end}}
+{{template "err" index .Errors "form"}}
+
+<form method="post" action="/events/{{.Event.Slug}}/register" autocomplete="on">
+  {{template "csrf" .CSRFToken}}
+  <input type="hidden" name="checkout_key" value="{{.Form.Get "checkout_key"}}">
+
+  {{range .Slots}}
+  {{$p := .Prefix}}
+  <fieldset class="panel attendee">
+    <legend>{{.Ticket.Name}}{{if gt (len $.Slots) 1}} {{.Number}}{{end}}</legend>
+    <input type="hidden" name="{{$p}}tt" value="{{.Ticket.ID}}">
+    <div class="field-row">
+      <div class="field">
+        <label for="{{$p}}first">First name</label>
+        <input id="{{$p}}first" name="{{$p}}first" value="{{$.Form.Get (print $p "first")}}" required maxlength="100">
+        {{template "err" index $.Errors (print $p "first")}}
+      </div>
+      <div class="field">
+        <label for="{{$p}}last">Last name</label>
+        <input id="{{$p}}last" name="{{$p}}last" value="{{$.Form.Get (print $p "last")}}" required maxlength="100">
+        {{template "err" index $.Errors (print $p "last")}}
+      </div>
+    </div>
+    <div class="field">
+      <label for="{{$p}}email">Email <small class="muted">(optional)</small></label>
+      <input id="{{$p}}email" name="{{$p}}email" type="email" value="{{$.Form.Get (print $p "email")}}">
+      {{template "err" index $.Errors (print $p "email")}}
+    </div>
+    {{range .Questions}}{{template "question" (dict "Q" . "Prefix" $p "Form" $.Form "Errors" $.Errors)}}{{end}}
+  </fieldset>
+  {{end}}
+
+  <fieldset class="panel">
+    <legend>Your details</legend>
+    <p class="muted"><small>Where the confirmation and tickets are sent.</small></p>
+    <div class="field-row">
+      <div class="field">
+        <label for="contact_first">First name</label>
+        <input id="contact_first" name="contact_first" value="{{.Form.Get "contact_first"}}" required
+               autocomplete="given-name" maxlength="100">
+        {{template "err" index .Errors "contact_first"}}
+      </div>
+      <div class="field">
+        <label for="contact_last">Last name</label>
+        <input id="contact_last" name="contact_last" value="{{.Form.Get "contact_last"}}" required
+               autocomplete="family-name" maxlength="100">
+        {{template "err" index .Errors "contact_last"}}
+      </div>
+    </div>
+    <div class="field">
+      <label for="contact_email">Email</label>
+      <input id="contact_email" name="contact_email" type="email" value="{{.Form.Get "contact_email"}}" required
+             autocomplete="email">
+      {{template "err" index .Errors "contact_email"}}
+    </div>
+    <div class="field">
+      <label for="contact_phone">Phone <small class="muted">(optional)</small></label>
+      <input id="contact_phone" name="contact_phone" type="tel" value="{{.Form.Get "contact_phone"}}"
+             autocomplete="tel">
+      {{template "err" index .Errors "contact_phone"}}
+    </div>
+    {{range .Questions}}{{template "question" (dict "Q" . "Prefix" "r." "Form" $.Form "Errors" $.Errors)}}{{end}}
+  </fieldset>
+
+  <fieldset class="panel">
+    <legend>Summary</legend>
+    <ul>{{range .Lines}}<li>{{.}}</li>{{end}}</ul>
+    <p class="total"><strong>{{if .Total}}{{.Currency}} {{money .Total}}{{else}}Free{{end}}</strong></p>
+    {{if .Total}}
+      {{if eq (len .Methods) 1}}
+        {{with index .Methods 0}}<input type="hidden" name="method" value="{{.Name}}"><p>{{.Label}}.</p>{{end}}
+      {{else if .Methods}}
+      <div class="field">
+        {{range .Methods}}
+        <label><input type="radio" name="method" value="{{.Name}}" {{if eq .Name ($.Form.Get "method")}}checked{{end}}> {{.Label}}</label>
+        {{end}}
+        {{template "err" index .Errors "method"}}
+      </div>
+      {{end}}
+    {{end}}
+  </fieldset>
+
+  {{if not .Blocked}}
+  <div class="actions">
+    <button type="submit">{{if .Total}}Continue{{else}}Register{{end}}</button>
+    <a class="button quiet" href="/events/{{.Event.Slug}}">Choose different tickets</a>
+  </div>
+  {{end}}
+</form>
+
+{{end}}

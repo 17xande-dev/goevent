@@ -1,0 +1,52 @@
+{{/*
+  An event's page. The ticket quantities are a GET form: choosing them changes
+  nothing, so it needs no CSRF token and this page sets no cookie. It leads to the
+  registration form proper, which does.
+*/}}
+{{define "content"}}
+
+{{if .Event.ImageKey}}
+<div class="event-hero"><img src="{{image .Event.ImageKey}}" alt=""></div>
+{{end}}
+
+<div class="event-page">
+  <div>
+    <h1>{{.Event.Title}}</h1>
+    <p class="lede-when">{{.Event.When}}</p>
+    {{if or .Event.Venue .Event.Address}}
+    <p>{{with .Event.Venue}}<strong>{{.}}</strong><br>{{end}}{{linebreaks .Event.Address}}</p>
+    {{end}}
+    {{with .Event.Summary}}<p class="lede">{{.}}</p>{{end}}
+    {{paragraphs .Event.Description}}
+  </div>
+
+  <div>
+    {{if .Problem}}<p class="notice problem">{{.Problem}}</p>{{end}}
+    {{if .Closed}}
+    <p class="notice">{{.Closed}}</p>
+    {{else if .Offers}}
+    <form class="panel tickets" method="get" action="/events/{{.Event.Slug}}/register">
+      <h2>Tickets</h2>
+      {{range .Offers}}
+      <div class="ticket">
+        <div>
+          <label for="qty-{{.ID}}"><strong>{{.Name}}</strong></label><br>
+          <span class="price">{{if .Free}}Free{{else}}{{$.Currency}} {{money .PriceCents}}{{end}}</span>
+          {{if .SoldOut}}<span class="badge sold-out">Sold out</span>
+          {{else if .Left}}<small class="muted">· {{.Left}} left</small>{{end}}
+          {{with .Description}}<br><small class="muted">{{.}}</small>{{end}}
+        </div>
+        <select id="qty-{{.ID}}" name="qty.{{.ID}}"{{if .SoldOut}} disabled{{end}}>
+          {{range .Choices}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </div>
+      {{end}}
+      <div class="actions"><button type="submit">Register</button></div>
+    </form>
+    {{else}}
+    <p class="notice">There are no tickets on sale for this event right now.</p>
+    {{end}}
+  </div>
+</div>
+
+{{end}}

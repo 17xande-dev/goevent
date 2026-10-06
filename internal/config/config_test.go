@@ -16,7 +16,7 @@ import (
 func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://u:p@localhost:5432/goevent")
-	t.Setenv("EMAIL_QUEUE_KEY", strings.Repeat("ab", 32))
+	t.Setenv("SECRET_KEY", strings.Repeat("ab", 32))
 	// PayFast's own published sandbox credentials — see .env.example. A gateway
 	// is optional, but this is the configuration most deployments have.
 	t.Setenv("PAYFAST_MERCHANT_ID", "10000100")
@@ -48,7 +48,7 @@ func TestLoad_RequiresSecrets(t *testing.T) {
 	// Each required var, named in the error, so a misconfigured deployment says
 	// what is missing instead of failing later and less clearly.
 	for _, key := range []string{
-		"DATABASE_URL", "SMTP_HOST", "EMAIL_FROM", "EMAIL_QUEUE_KEY",
+		"DATABASE_URL", "SMTP_HOST", "EMAIL_FROM", "SECRET_KEY",
 		// Only once PayFast is switched on by its merchant id, which setRequired does.
 		"PAYFAST_MERCHANT_KEY",
 	} {
@@ -101,8 +101,8 @@ func TestLoad_Defaults(t *testing.T) {
 func TestLoad_RejectsMalformedEmailQueueKey(t *testing.T) {
 	for _, value := range []string{"short", strings.Repeat("zz", 32), strings.Repeat("ab", 31)} {
 		setRequired(t)
-		t.Setenv("EMAIL_QUEUE_KEY", value)
-		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "EMAIL_QUEUE_KEY") {
+		t.Setenv("SECRET_KEY", value)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
 			t.Fatalf("key accepted: %v", err)
 		}
 	}
@@ -690,7 +690,7 @@ func TestLoad_EverySecretKeyAcceptsAFile(t *testing.T) {
 			t.Setenv("SMTP_USERNAME", "orders@example.com")
 
 			marker := "via-file-7f3a9c"
-			if key == "EMAIL_QUEUE_KEY" {
+			if key == "SECRET_KEY" {
 				marker = strings.Repeat("cd", 32)
 			}
 			value := marker
@@ -908,7 +908,7 @@ func setGraph(t *testing.T) {
 // mail requirement on its own — EMAIL_FROM without a host is what Graph looks
 // like, not a half-configured relay.
 func TestLoad_GraphOnlySatisfiesTheMailRequirement(t *testing.T) {
-	t.Setenv("EMAIL_QUEUE_KEY", strings.Repeat("ab", 32))
+	t.Setenv("SECRET_KEY", strings.Repeat("ab", 32))
 	t.Setenv("DATABASE_URL", "postgres://u:p@localhost:5432/goevent")
 	t.Setenv("PAYFAST_MERCHANT_ID", "10000100")
 	t.Setenv("PAYFAST_MERCHANT_KEY", "46f0cd694581a")
@@ -957,7 +957,7 @@ func TestLoad_GraphMustBeComplete(t *testing.T) {
 // EMAIL_FROM-without-a-host acceptable: a relay with no sender is not a working
 // configuration either way.
 func TestLoad_SMTPHostNeedsEmailFrom(t *testing.T) {
-	t.Setenv("EMAIL_QUEUE_KEY", strings.Repeat("ab", 32))
+	t.Setenv("SECRET_KEY", strings.Repeat("ab", 32))
 	t.Setenv("DATABASE_URL", "postgres://u:p@localhost:5432/goevent")
 	t.Setenv("PAYFAST_MERCHANT_ID", "10000100")
 	t.Setenv("PAYFAST_MERCHANT_KEY", "46f0cd694581a")

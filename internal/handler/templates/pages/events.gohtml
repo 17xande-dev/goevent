@@ -1,0 +1,24 @@
+{{define "content"}}
+
+<h1>Events</h1>
+
+{{if .Events}}
+<ul class="event-list">
+  {{range .Events}}
+  <li>
+    <a class="event-card" href="/events/{{.Slug}}">
+      <div class="frame">{{if .ImageKey}}<img src="{{image .ImageKey}}" alt="" loading="lazy">{{end}}</div>
+      <span class="title">{{.Title}}</span>
+      <span class="when">{{.When}}{{with .Venue}} · {{.}}{{end}}</span>
+      {{with .Summary}}<span>{{.}}</span>{{end}}
+      {{if eq .Status "cancelled"}}<span class="badge problem">Cancelled</span>
+      {{else if eq .Status "closed"}}<span class="badge">Registration closed</span>{{end}}
+    </a>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="lede muted">There are no upcoming events at the moment.</p>
+{{end}}
+
+{{end}}

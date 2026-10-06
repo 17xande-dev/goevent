@@ -98,4 +98,20 @@
     <small class="hint">Untick for an event reachable only by its link.</small>
   </div>
 </fieldset>
+
+<fieldset class="panel">
+  <legend>Paying later</legend>
+  <div class="field">
+    <label><input type="checkbox" name="pay_later" value="1" {{if .Form.On "pay_later"}}checked{{end}}>
+      Let people pay by EFT or cash instead of online</label>
+    <small class="hint">Their places are held until registration closes. Record the payment
+    on their registration when it arrives and their tickets are sent then.</small>
+  </div>
+  <div class="field">
+    <label for="pay_later_instructions">How to pay</label>
+    <textarea id="pay_later_instructions" name="pay_later_instructions" rows="4"
+              placeholder="Bank, account number, branch code — and to use the registration reference.">{{.Form.Get "pay_later_instructions"}}</textarea>
+    {{template "err" index .Errors "pay_later_instructions"}}
+  </div>
+</fieldset>
 {{end}}

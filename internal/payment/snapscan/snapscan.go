@@ -222,7 +222,7 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 	if r.AmountCents <= 0 {
 		return payment.Handover{}, ErrAmount
 	}
-	if r.OrderID == "" {
+	if r.PaymentID == "" {
 		return payment.Handover{}, errors.New("snapscan: request has no order id")
 	}
 
@@ -233,21 +233,21 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 
 	// What identifies the payment, and what both the link and the QR image carry.
 	q := url.Values{}
-	q.Set("id", r.OrderID)
+	q.Set("id", r.PaymentID)
 	q.Set("amount", amount)
 	// strict does what the signature does not: it refuses a second successful
 	// payment against the same id, and refuses an amount below the one asked
 	// for. Sent whether or not a validation key is configured.
 	q.Set("strict", "true")
 	if g.cfg.ValidationKey != "" {
-		q.Set("signature", Sign(g.cfg.ValidationKey, r.AmountCents, r.OrderID))
+		q.Set("signature", Sign(g.cfg.ValidationKey, r.AmountCents, r.PaymentID))
 	}
 
 	// The link additionally says where to put the shopper's browser afterwards.
 	link := url.Values{}
 	maps.Copy(link, q)
-	link.Set("s_url", payment.OrderReturnURL(g.cfg.SuccessURL, r.OrderID))
-	link.Set("f_url", payment.OrderReturnURL(g.cfg.FailURL, r.OrderID))
+	link.Set("s_url", payment.ReturnURL(g.cfg.SuccessURL, r.PaymentID))
+	link.Set("f_url", payment.ReturnURL(g.cfg.FailURL, r.PaymentID))
 	action := g.base + "/qr/" + g.cfg.SnapCode + "?" + link.Encode()
 
 	// The image is the same payment with a format suffix on the snap code — and

@@ -36,8 +36,8 @@ func hold(t *testing.T, pool *pgxpool.Pool, e events.Event, tt events.TicketType
 	var regID, attID string
 	err := pool.QueryRow(t.Context(), `
 INSERT INTO registrations (event_id, reference, contact_first_name, contact_last_name, contact_email,
-    total_cents, currency, hold_expires_at, checkout_key, manage_token_hash)
-VALUES ($1, 'ABC-123', 'Ada', 'Lovelace', 'ada@example.com', 0, 'ZAR', now(), 'k', '\x01')
+    total_cents, currency, hold_expires_at, checkout_key)
+VALUES ($1, 'ABC-123', 'Ada', 'Lovelace', 'ada@example.com', 0, 'ZAR', now(), 'k')
 RETURNING id`, e.ID).Scan(&regID)
 	if err != nil {
 		t.Fatalf("insert registration: %v", err)

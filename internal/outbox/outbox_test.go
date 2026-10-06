@@ -24,9 +24,9 @@ WITH e AS (
     RETURNING id
 )
 INSERT INTO registrations (event_id, reference, contact_first_name, contact_last_name, contact_email,
-    status, total_cents, currency, hold_expires_at, checkout_key, manage_token_hash)
+    status, total_cents, currency, hold_expires_at, checkout_key)
 SELECT e.id, substr(md5(random()::text), 1, 8), 'Ada', 'Lovelace', 'ada@example.com',
-    'confirmed', 100, 'ZAR', now(), 'k', decode(md5(random()::text), 'hex')
+    'confirmed', 100, 'ZAR', now(), 'k'
 FROM e RETURNING id`).Scan(&id)
 	if err != nil {
 		t.Fatal(err)

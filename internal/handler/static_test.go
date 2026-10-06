@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/17xande-dev/goevent/internal/events"
 )
 
 // The asset set is loaded once per process, so a test that changes STATIC_DIR has to
@@ -315,16 +317,40 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 			t.Errorf("GET %s carries an inline event handler: %s", path, m)
 		}
 	}
+	// The public pages, through a registration and its hand-over.
+	pe, adult, child := published(t, s, 10)
+	if _, err := s.events.CreateQuestion(t.Context(), events.Question{EventID: pe.ID, Scope: events.ScopeAttendee,
+		Kind: events.KindSelect, Label: "Size", Options: []string{"S", "M"}}); err != nil {
+		t.Fatal(err)
+	}
+	form := registerForm(t, s, pe, map[string]int{child.ID: 1})
+	res, _ := submit(t, s, pe, form)
+	manage := res.Header.Get("Location")
+	handover := registerForm(t, s, pe, map[string]int{adult.ID: 1})
+	_, handoverPage := submit(t, s, pe, handover)
+	paymentID := s.gateway.Requests()[0].PaymentID
+	pages := map[string]string{"hand-over": handoverPage}
+	for _, path := range []string{
+		"/events", "/events/" + pe.Slug, "/events/" + pe.Slug + "/register?qty." + child.ID + "=2",
+		manage, "/checkout/success?payment=" + paymentID, "/checkout/status?payment=" + paymentID,
+	} {
+		res, page := get(t, s.srv, path)
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("GET %s = %d; the sweep is not reaching the page", path, res.StatusCode)
+			continue
+		}
+		pages[path] = page
+	}
 	// The anonymous pages, from a client with no session.
 	anon := newPublic(t, testConfig(), "")
-	for _, path := range []string{"/admin/login"} {
-		_, page := get(t, anon, path)
+	_, pages["/admin/login"] = get(t, anon, "/admin/login")
+	for path, page := range pages {
 		checked++
 		if strings.Contains(page, "style=\"") || inlineHandler.MatchString(page) {
-			t.Errorf("GET %s carries an inline style or handler", path)
+			t.Errorf("%s carries an inline style or handler", path)
 		}
 	}
-	if checked < 13 {
+	if checked < 20 {
 		t.Fatalf("only %d pages checked", checked)
 	}
 }

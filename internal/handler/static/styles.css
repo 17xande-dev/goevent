@@ -553,37 +553,35 @@ pre.raw {
   white-space: nowrap;
 }
 
-/* --- Product cards ------------------------------------------------------- */
+/* --- Event cards --------------------------------------------------------- */
 
-/* auto-fill with a clamped minimum rather than breakpoints. The clamp is what makes
-   a phone show two cards across instead of one enormous one: the minimum column is
-   30% of the viewport, floored at 9rem and capped at 15rem, so the grid lands on two
-   columns at 430px and four at 1280px — and this file still knows nothing about
+/* auto-fill with a clamped minimum rather than breakpoints: one card across on a
+   phone, two or three on a desktop, and this file still knows nothing about
    device widths. */
-.products {
+.event-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(clamp(9rem, 30vw, 15rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
   gap: var(--gap-lg) var(--gap-md);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.product-card {
+.event-card {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-sm);
+  gap: var(--gap-xs);
   color: inherit;
   text-decoration: none;
 
-  /* The image sits in a fixed-ratio well, so a catalog of photographs at different
-     sizes still lines up — and a product with only the placeholder keeps the same
-     shape as one with a real picture. */
+  /* A wide, fixed-ratio well, so pictures of any shape line up — and an event
+     with no picture keeps the same shape as one with. */
   .frame {
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 16 / 9;
     overflow: hidden;
     border-radius: var(--radius-lg);
-    background: var(--paper-sunk);
+    background: color-mix(in oklab, var(--accent) 12%, var(--paper-sunk));
+    margin-block-end: var(--gap-xs);
 
     > img {
       width: 100%;
@@ -596,17 +594,15 @@ pre.raw {
 
   .title {
     font-weight: 600;
+    font-size: var(--text-large);
     letter-spacing: -0.01em;
     line-height: 1.3;
   }
 
-  .price {
+  .when {
     color: var(--ink-soft);
-    font-variant-numeric: tabular-nums;
   }
 
-  /* No border, no shadow: the cards are stacked blocks of information rather than
-     boxes, and the only hover affordance is the image easing forward. */
   &:hover .frame > img {
     transform: scale(1.03);
   }
@@ -639,77 +635,80 @@ pre.raw {
   }
 }
 
-/* --- Product detail ------------------------------------------------------ */
+/* --- Event page ---------------------------------------------------------- */
 
-.product-detail {
+/* The picture across the top, then the description beside the tickets on a wide
+   screen and above them on a narrow one — auto-fit does the switching. */
+.event-hero {
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  margin-block-end: var(--gap-md);
+  background: var(--paper-sunk);
+
+  > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.event-page {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: var(--gap-lg);
   align-items: start;
-
-  .frame {
-    aspect-ratio: 4 / 5;
-    overflow: hidden;
-    border-radius: var(--radius-lg);
-    background: var(--paper-sunk);
-
-    > img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-  }
 
   h1 {
     margin-block-start: 0;
   }
 }
 
-.price-lead {
+.lede-when {
   font-size: var(--text-large);
-  font-variant-numeric: tabular-nums;
-  margin-block: 0 var(--gap);
+  margin-block: 0 var(--gap-sm);
 }
 
-/* The product page is the detail fragment plus a buying form. The fragment is a
-   two-column grid of its own so that an embedder fetching it gets something
-   laid out — but on this page those two columns and the form have to share one
-   grid, or the form ends up beneath the photograph while the prices sit across
-   the page.
+/* The tickets: one row each, the name and price beside how many. */
+.tickets {
+  .ticket {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding-block: var(--gap-sm);
+    border-block-end: 1px solid var(--rule);
 
-   display:contents dissolves the fragment's wrapper so its children join this
-   grid directly. That needs explicit columns to place the form into the second
-   one, hence the single width query — the only one in this file. Below it
-   everything is one column and the fragment keeps its own layout. */
-.product-page {
-  display: grid;
-  gap: var(--gap-lg);
-  align-items: start;
-}
-
-@media (width >= 52rem) {
-  .product-page {
-    grid-template-columns: 1fr 1fr;
-
-    > .product-detail {
-      display: contents;
-
-      /* The photograph spans both rows, so the form sits directly beneath the
-         prices rather than below the whole image. */
-      > .frame {
-        grid-area: 1 / 1 / span 2 / span 1;
-      }
-
-      > .info {
-        grid-area: 1 / 2;
-      }
+    /* The name is the select's label, but it reads as the row's heading: no
+       form-label spacing between it and its price. */
+    label {
+      display: inline;
+      margin: 0;
+      font-size: inherit;
     }
 
-    > .buy {
-      grid-area: 2 / 2;
+    .price {
+      color: var(--ink-soft);
+      font-variant-numeric: tabular-nums;
+    }
+
+    select {
+      width: auto;
     }
   }
+}
+
+/* One attendee's block on the registration form. */
+.attendee > legend {
+  font-weight: 600;
+}
+
+/* The QR hand-over and the ticket pages lay out a code beside its words. */
+.total {
+  font-size: var(--text-large);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Forms and buttons --------------------------------------------------- */

@@ -1,0 +1,34 @@
+{{/*
+  One custom question on the registration form. Dot is a dict: Q the question,
+  Prefix the field-name prefix (an attendee's "a0." or the registration's "r."),
+  Form the submitted values and Errors their messages. The field is
+  Prefix + "q." + the question's id.
+*/}}
+{{define "question"}}
+{{$name := print .Prefix "q." .Q.ID}}
+{{$v := .Form.Get $name}}
+<div class="field">
+  {{if eq .Q.Kind "checkbox"}}
+  <label><input type="checkbox" name="{{$name}}" value="1" {{if eq $v "1"}}checked{{end}}>
+    {{.Q.Label}}{{if .Q.Required}} <small class="muted">(required)</small>{{end}}</label>
+  {{else}}
+  <label for="{{$name}}">{{.Q.Label}}{{if not .Q.Required}} <small class="muted">(optional)</small>{{end}}</label>
+  {{if eq .Q.Kind "textarea"}}
+  <textarea id="{{$name}}" name="{{$name}}" rows="3"{{if .Q.Required}} required{{end}}>{{$v}}</textarea>
+  {{else if eq .Q.Kind "select"}}
+  <select id="{{$name}}" name="{{$name}}"{{if .Q.Required}} required{{end}}>
+    <option value="">Choose…</option>
+    {{range .Q.Options}}<option{{if eq . $v}} selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  {{else if eq .Q.Kind "date"}}
+  <input id="{{$name}}" name="{{$name}}" type="date" value="{{$v}}"{{if .Q.Required}} required{{end}}>
+  {{else if eq .Q.Kind "phone"}}
+  <input id="{{$name}}" name="{{$name}}" type="tel" value="{{$v}}"{{if .Q.Required}} required{{end}}>
+  {{else}}
+  <input id="{{$name}}" name="{{$name}}" value="{{$v}}"{{if .Q.Required}} required{{end}}>
+  {{end}}
+  {{end}}
+  {{with .Q.Help}}<small class="hint">{{.}}</small>{{end}}
+  {{template "err" index .Errors $name}}
+</div>
+{{end}}

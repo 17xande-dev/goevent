@@ -238,7 +238,7 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 	if r.AmountCents < MinAmountCents {
 		return payment.Handover{}, ErrAmount
 	}
-	if r.OrderID == "" {
+	if r.PaymentID == "" {
 		return payment.Handover{}, errors.New("payfast: request has no order id")
 	}
 
@@ -251,15 +251,15 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 
 	add("merchant_id", g.cfg.MerchantID)
 	add("merchant_key", g.cfg.MerchantKey)
-	add("return_url", payment.OrderReturnURL(g.cfg.ReturnURL, r.OrderID))
-	add("cancel_url", payment.OrderReturnURL(g.cfg.CancelURL, r.OrderID))
+	add("return_url", payment.ReturnURL(g.cfg.ReturnURL, r.PaymentID))
+	add("cancel_url", payment.ReturnURL(g.cfg.CancelURL, r.PaymentID))
 	add("notify_url", g.cfg.NotifyURL)
 	add("name_first", r.NameFirst)
 	add("name_last", r.NameLast)
 	add("email_address", r.Email)
 	// m_payment_id is our order id coming back on the notification, and the only
 	// thing that ties a payment to an order.
-	add("m_payment_id", r.OrderID)
+	add("m_payment_id", r.PaymentID)
 	add("amount", payment.FormatAmount(r.AmountCents))
 	add("item_name", truncate(r.ItemName, itemNameMaxLen))
 

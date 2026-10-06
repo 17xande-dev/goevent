@@ -104,8 +104,8 @@ func TestParseCallback_AcceptsAConfirmedPayment(t *testing.T) {
 		t.Fatalf("ParseCallback: %v", err)
 	}
 
-	if cb.OrderID != "5f1e4a2c-0000-4000-8000-00000000abcd" {
-		t.Errorf("OrderID = %q, want the merchantReference", cb.OrderID)
+	if cb.PaymentID != "5f1e4a2c-0000-4000-8000-00000000abcd" {
+		t.Errorf("OrderID = %q, want the merchantReference", cb.PaymentID)
 	}
 	if cb.Ref != "7421" {
 		t.Errorf("Ref = %q, want SnapScan's payment id", cb.Ref)

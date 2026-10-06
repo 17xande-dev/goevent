@@ -85,8 +85,8 @@ func TestITN_ValidNotification(t *testing.T) {
 		t.Fatalf("ParseCallback: %v", err)
 	}
 
-	if cb.OrderID != orderID {
-		t.Errorf("OrderID = %q, want %q", cb.OrderID, orderID)
+	if cb.PaymentID != orderID {
+		t.Errorf("OrderID = %q, want %q", cb.PaymentID, orderID)
 	}
 	if cb.Ref != "1089250" {
 		t.Errorf("Ref = %q, want the pf_payment_id", cb.Ref)

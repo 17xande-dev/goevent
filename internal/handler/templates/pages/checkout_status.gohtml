@@ -1,0 +1,13 @@
+{{/*
+  The payment-status poll's answer, and the page it belongs to. A QR hand-over has
+  no browser redirect back — the registrant pays in an app, often on another
+  device — so the hand-over page asks this every few seconds. The block is what
+  htmx swaps; the page around it is what somebody opening the URL directly gets.
+*/}}
+{{define "content"}}
+<h1>Payment status</h1>
+<div id="payment-status">{{template "checkout_status_block" .}}</div>
+{{end}}
+
+{{/* The htmx half: the block alone, renderable by name. */}}
+{{define "checkout_status_fragment"}}{{template "checkout_status_block" .}}{{end}}

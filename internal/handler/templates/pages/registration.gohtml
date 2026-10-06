@@ -1,0 +1,59 @@
+{{/*
+  A registrant's own page, reached by the link in their emails. It is theirs
+  alone: the handler refuses it without the right token and tells caches not to
+  keep it.
+*/}}
+{{define "content"}}
+{{$r := .Registration}}
+
+<a class="back" href="/events/{{.Event.Slug}}">← {{.Event.Title}}</a>
+<div class="page-head">
+  <h1>Your registration</h1>
+  <span class="badge{{if eq $r.Status "confirmed"}} done{{else if or (eq $r.Status "cancelled") (eq $r.Status "expired")}} problem{{end}}">{{$r.Status.Label}}</span>
+</div>
+
+<dl class="facts">
+  <dt>Event</dt><dd>{{.Event.Title}}</dd>
+  <dt>When</dt><dd>{{.Event.When}}</dd>
+  {{with .Event.Venue}}<dt>Where</dt><dd>{{.}}</dd>{{end}}
+  <dt>Reference</dt><dd><strong>{{$r.Reference}}</strong></dd>
+  <dt>Booked by</dt><dd>{{$r.ContactName}} ({{$r.ContactEmail}})</dd>
+  <dt>Total</dt><dd>{{if $r.Free}}Free{{else}}{{$r.Currency}} {{money $r.TotalCents}}{{end}}</dd>
+</dl>
+
+{{if eq $r.Status "pending"}}
+  {{if $r.PayLater}}
+  <div class="notice">
+    <p><strong>Awaiting payment.</strong> Your places are held until
+    {{(.Event.Local $r.HoldExpiresAt).Format "Monday 2 January at 15:04"}}. Your tickets are sent as soon as
+    the organisers record your payment. Please quote <strong>{{$r.Reference}}</strong>.</p>
+    {{paragraphs .Event.PayLaterInstructions}}
+  </div>
+  {{else}}
+  <p class="notice">Waiting for your payment to be confirmed. Your tickets are emailed as soon as it is.</p>
+  {{end}}
+{{else if eq $r.Status "expired"}}
+<p class="notice problem">This registration was not paid for in time, so its places were released.</p>
+{{else if eq $r.Status "cancelled"}}
+<p class="notice problem">This registration has been cancelled.</p>
+{{else if eq .Event.Status "cancelled"}}
+<p class="notice problem">This event has been cancelled.</p>
+{{end}}
+
+<h2>Who is coming</h2>
+{{range .Attendees}}
+<section class="panel">
+  <h3>{{.Name}}</h3>
+  <p class="muted">{{.TicketName}}{{if eq .Status "cancelled"}} · <span class="badge problem">Cancelled</span>{{end}}</p>
+  {{with index $.AttendeeAnswers .ID}}
+  <dl class="facts">{{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+  {{end}}
+</section>
+{{end}}
+
+{{with .Answers}}
+<h2>Your answers</h2>
+<dl class="facts">{{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+{{end}}
+
+{{end}}

@@ -2,9 +2,9 @@ package payment
 
 import "net/url"
 
-// OrderReturnURL binds a browser return to its checkout rather than whichever
-// order another tab placed most recently. It carries no authentication token.
-func OrderReturnURL(base, orderID string) string {
+// ReturnURL binds a browser return to its own payment rather than whichever
+// one another tab started most recently. It carries no authentication token.
+func ReturnURL(base, paymentID string) string {
 	if base == "" {
 		return ""
 	}
@@ -13,7 +13,7 @@ func OrderReturnURL(base, orderID string) string {
 		return base
 	}
 	q := u.Query()
-	q.Set("order", orderID)
+	q.Set("payment", paymentID)
 	u.RawQuery = q.Encode()
 	return u.String()
 }

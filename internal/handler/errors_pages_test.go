@@ -1,20 +1,16 @@
 package handler
 
 import (
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/middleware"
-	"github.com/17xande-dev/goevent/internal/payment"
-	"github.com/17xande-dev/mailer"
 )
 
 // The invariant these tests defend: an error response either fills the target it
@@ -164,7 +160,7 @@ func TestErrorPages_DetailShownInDevAndHiddenInProduction(t *testing.T) {
 }
 
 func TestConfig_ShowErrorDetailFollowsBaseURL(t *testing.T) {
-	t.Setenv("EMAIL_QUEUE_KEY", strings.Repeat("ab", 32))
+	t.Setenv("SECRET_KEY", strings.Repeat("ab", 32))
 	// The derivation itself, without a server in the way.
 	t.Setenv("DATABASE_URL", "postgres://x/y")
 	// Images and mail are required, and this test is about neither — it just has
@@ -260,22 +256,12 @@ func brokenApp(t *testing.T, cfg config.Config) *httptest.Server {
 	t.Helper()
 
 	pool := dbtest.Pool(t)
-	images := blob.NewFake()
-	tmpl, err := ParseTemplates("", images)
-	if err != nil {
-		t.Fatalf("ParseTemplates: %v", err)
-	}
-	log := slog.New(slog.DiscardHandler)
-	users := auth.NewStore(pool)
-	h := New(Deps{
-		Config: cfg, Log: log, Tmpl: tmpl,
-		Gateways: registryOf(t, payment.NewFake()), Mail: mailer.NewFake(), Images: images,
-		Users: users,
-	})
+	d := testDeps(t, pool, cfg, "", blob.NewFake())
+	h := New(d)
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)
-	mux.Handle("/admin/", h.FirstPartyHandler(middleware.RequireAdmin(users, log)))
+	mux.Handle("/admin/", h.FirstPartyHandler(middleware.RequireAdmin(d.Users, d.Log)))
 	srv := httptest.NewServer(middleware.Chain(mux, middleware.RequestID))
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)

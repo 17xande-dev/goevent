@@ -1,6 +1,14 @@
 -- name: ListEvents :many
 SELECT * FROM events ORDER BY starts_at DESC, id;
 
+-- What the public list shows: listed events that are not drafts and have not
+-- ended. A closed or cancelled one stays listed until it is over, saying so,
+-- rather than vanishing from under somebody who was about to register.
+-- name: ListPublicEvents :many
+SELECT * FROM events
+WHERE listed AND status <> 'draft' AND ends_at > now()
+ORDER BY starts_at, id;
+
 -- name: GetEvent :one
 SELECT * FROM events WHERE id = $1;
 
@@ -10,9 +18,10 @@ SELECT * FROM events WHERE slug = $1;
 -- name: CreateEvent :one
 INSERT INTO events (
     slug, title, summary, description, venue, address, starts_at, ends_at,
-    timezone, capacity, listed, registration_opens_at, registration_closes_at
+    timezone, capacity, listed, registration_opens_at, registration_closes_at,
+    pay_later, pay_later_instructions
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 ) RETURNING *;
 
 -- Status and image are not written here: each has its own action, so saving the
@@ -21,7 +30,8 @@ INSERT INTO events (
 UPDATE events SET
     slug = $2, title = $3, summary = $4, description = $5, venue = $6, address = $7,
     starts_at = $8, ends_at = $9, timezone = $10, capacity = $11, listed = $12,
-    registration_opens_at = $13, registration_closes_at = $14, updated_at = now()
+    registration_opens_at = $13, registration_closes_at = $14,
+    pay_later = $15, pay_later_instructions = $16, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

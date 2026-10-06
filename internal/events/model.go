@@ -122,8 +122,22 @@ type Event struct {
 	Listed               bool
 	RegistrationOpensAt  *time.Time
 	RegistrationClosesAt *time.Time
+	// PayLater offers paying by EFT or cash, which an administrator records,
+	// beside any online gateway. PayLaterInstructions say how.
+	PayLater             bool
+	PayLaterInstructions string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+// RegistrationDeadline is when registration closes: the window's end if one is
+// set, otherwise the event's start. A pay-later registration holds its seats
+// until then.
+func (e Event) RegistrationDeadline() time.Time {
+	if e.RegistrationClosesAt != nil {
+		return *e.RegistrationClosesAt
+	}
+	return e.StartsAt
 }
 
 // Location is the event's zone, or the default if the stored name is somehow

@@ -30,7 +30,7 @@ func testGateway(t *testing.T, edit func(*Config)) *Gateway {
 
 func testRequest() payment.Request {
 	return payment.Request{
-		OrderID:     "5f1e4a2c-0000-4000-8000-00000000abcd",
+		PaymentID:   "5f1e4a2c-0000-4000-8000-00000000abcd",
 		AmountCents: 12550,
 		Currency:    "ZAR",
 		ItemName:    "Shopalot order 5F1E4A2C",
@@ -66,7 +66,7 @@ func TestHandover_BuildsThePaymentURL(t *testing.T) {
 	if q.Get("amount") != "12550" {
 		t.Errorf("amount = %q, want integer cents", q.Get("amount"))
 	}
-	if q.Get("id") != testRequest().OrderID {
+	if q.Get("id") != testRequest().PaymentID {
 		t.Errorf("id = %q, want the order id", q.Get("id"))
 	}
 	// strict is what refuses a second payment against the same order and an
@@ -74,10 +74,10 @@ func TestHandover_BuildsThePaymentURL(t *testing.T) {
 	if q.Get("strict") != "true" {
 		t.Errorf("strict = %q, want true", q.Get("strict"))
 	}
-	if q.Get("s_url") != "https://store.example/cart/checkout/success?order="+testRequest().OrderID {
+	if q.Get("s_url") != "https://store.example/cart/checkout/success?payment="+testRequest().PaymentID {
 		t.Errorf("s_url = %q", q.Get("s_url"))
 	}
-	if q.Get("f_url") != "https://store.example/cart/checkout/cancel?order="+testRequest().OrderID {
+	if q.Get("f_url") != "https://store.example/cart/checkout/cancel?payment="+testRequest().PaymentID {
 		t.Errorf("f_url = %q", q.Get("f_url"))
 	}
 	// No validation key configured, so no signature — an empty one would be
@@ -183,7 +183,7 @@ func TestHandover_SignsWhenAValidationKeyIsConfigured(t *testing.T) {
 	u, _ := url.Parse(h.Action)
 	q := u.Query()
 
-	want := Sign("my-validation-key", 12550, testRequest().OrderID)
+	want := Sign("my-validation-key", 12550, testRequest().PaymentID)
 	if q.Get("signature") != want {
 		t.Errorf("signature = %q, want %q", q.Get("signature"), want)
 	}

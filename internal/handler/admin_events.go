@@ -257,6 +257,7 @@ func eventValues(e events.Event) formValues {
 		"title": e.Title, "slug": e.Slug, "summary": e.Summary, "description": e.Description,
 		"venue": e.Venue, "address": e.Address, "timezone": e.Timezone,
 		"capacity": formatCount(e.Capacity), "listed": checkbox(e.Listed),
+		"pay_later": checkbox(e.PayLater), "pay_later_instructions": e.PayLaterInstructions,
 		"registration_opens_at":  formatLocal(e.RegistrationOpensAt, loc),
 		"registration_closes_at": formatLocal(e.RegistrationClosesAt, loc),
 	}
@@ -292,7 +293,10 @@ func parseEvent(r *http.Request) (events.Event, formValues, validate.FormErrors)
 		Description: strings.TrimSpace(r.PostFormValue("description")),
 		Venue:       f["venue"], Address: strings.TrimSpace(r.PostFormValue("address")),
 		Timezone: tz, Listed: f.On("listed"),
+		PayLater:             f.On("pay_later"),
+		PayLaterInstructions: strings.TrimSpace(r.PostFormValue("pay_later_instructions")),
 	}
+	f["pay_later_instructions"] = e.PayLaterInstructions
 	if e.Slug == "" {
 		e.Slug = events.Slugify(e.Title)
 		f["slug"] = e.Slug

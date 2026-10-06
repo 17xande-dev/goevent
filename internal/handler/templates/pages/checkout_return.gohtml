@@ -1,0 +1,25 @@
+{{/*
+  Where a gateway sends the browser back. It reports and decides nothing: only an
+  authenticated notification to the callback makes a payment paid, and it may
+  arrive before or after this page loads.
+*/}}
+{{define "content"}}
+
+{{if not .Found}}
+<h1>{{if .Cancelled}}Payment cancelled{{else}}Thank you{{end}}</h1>
+<p>If you paid, your confirmation and tickets are on their way by email.</p>
+<p><a href="/events">See upcoming events</a></p>
+
+{{else if .Cancelled}}
+<h1>Payment cancelled</h1>
+<p>Nothing was taken for {{.Event.Title}} (reference <strong>{{.Registration.Reference}}</strong>).
+Your places are held for a little while if you would like to
+<a href="/events/{{.Event.Slug}}">try again</a>.</p>
+
+{{else}}
+<h1>Thank you</h1>
+<p>{{.Event.Title}} · reference <strong>{{.Registration.Reference}}</strong></p>
+<div id="payment-status">{{template "checkout_status_block" .}}</div>
+{{end}}
+
+{{end}}

@@ -5,6 +5,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +30,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/payment"
 	"github.com/17xande-dev/goevent/internal/payment/payfast"
 	"github.com/17xande-dev/goevent/internal/payment/snapscan"
+	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/mailer/msauth"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -128,24 +132,32 @@ func run() error {
 		handler.SetAssetReload(true)
 		tmpl.SetReload(true)
 	}
-	queue, err := outbox.New(pool, cfg.EmailQueueKey)
+	outboxKey, signer, err := deriveKeys(cfg.SecretKey)
 	if err != nil {
 		return err
 	}
+	queue, err := outbox.New(pool, outboxKey)
+	if err != nil {
+		return err
+	}
+	regs := registrations.NewStore(pool)
 	h := handler.New(handler.Deps{
-		Config:   cfg,
-		Log:      log,
-		Tmpl:     tmpl,
-		Events:   events.NewStore(pool),
-		Gateways: gateways,
-		Mail:     mail,
-		Outbox:   queue,
-		Images:   images,
-		Users:    users,
+		Config:        cfg,
+		Log:           log,
+		Tmpl:          tmpl,
+		Events:        events.NewStore(pool),
+		Registrations: regs,
+		Signer:        signer,
+		Gateways:      gateways,
+		Mail:          mail,
+		Outbox:        queue,
+		Images:        images,
+		Users:         users,
 	})
-	// Expired admin sessions are swept in-process, on this context, so the sweep
-	// stops with the server rather than outliving it.
+	// Expired admin sessions and lapsed registration holds are swept in-process,
+	// on this context, so the sweeps stop with the server rather than outliving it.
 	startSessionCleanup(ctx, users, log)
+	startHoldExpiry(ctx, regs, log)
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
@@ -252,6 +264,20 @@ func ensureSetupToken(ctx context.Context, users *auth.Store, supplied string, l
 	log.Warn("no administrator exists. Visit /admin/setup and use this one-time setup token",
 		"setup_token", token)
 	return nil
+}
+
+// deriveKeys turns the one configured secret into the keys each use needs: the
+// outbox's AES key (as the hex it takes) and the link and ticket signer. Each is
+// an HMAC of the secret under its own label, so no two uses ever share key
+// material and a key leaked from one cannot be used for another.
+func deriveKeys(secretHex string) (outboxHex string, signer registrations.Signer, err error) {
+	secret, err := hex.DecodeString(secretHex)
+	if err != nil || len(secret) != 32 {
+		return "", registrations.Signer{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters")
+	}
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte("goevent/outbox/v1"))
+	return hex.EncodeToString(m.Sum(nil)), registrations.NewSigner(secret), nil
 }
 
 func printMigrationStatus(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
@@ -508,8 +534,15 @@ func routes(cfg config.Config, h *handler.Handler, gateways payment.Registry, us
 
 	// Everything that changes state is mounted here, behind CSRF protection and
 	// the cookie nosurf needs to set for it.
+	// The gateway callback is mounted here and not on the first-party handler, so
+	// it sits outside CSRF protection by not being in the group — a payment
+	// provider cannot carry a token. It authenticates itself instead; see
+	// internal/handler/webhook.go.
+	h.RegisterPayments(mux)
+
 	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(users, log))
 	mux.Handle("/admin/", firstParty)
+	mux.Handle(handler.RegisterPath, firstParty)
 
 	// Security headers wrap everything, including 404s and /healthz. Each
 	// gateway declares what its own hand-over needs: a form target for one that

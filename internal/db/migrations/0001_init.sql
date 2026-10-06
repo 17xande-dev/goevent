@@ -57,6 +57,11 @@ CREATE TABLE events (
     listed      BOOLEAN NOT NULL DEFAULT TRUE,
     registration_opens_at  TIMESTAMPTZ,
     registration_closes_at TIMESTAMPTZ,
+    -- Paying later — EFT or cash, recorded by an administrator — is offered
+    -- beside any online gateway. The instructions (bank details, a reference to
+    -- quote) are shown and emailed to whoever chooses it.
+    pay_later   BOOLEAN NOT NULL DEFAULT FALSE,
+    pay_later_instructions TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (ends_at >= starts_at)
@@ -118,13 +123,16 @@ CREATE TABLE registrations (
     status          TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'confirmed', 'cancelled', 'expired')),
     total_cents     BIGINT NOT NULL CHECK (total_cents >= 0),
-    currency        TEXT NOT NULL,
+    -- ISO 4217. Checked because an empty currency once got through a handler
+    -- that forgot to set it, and a total with no currency is not a price.
+    currency        TEXT NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
     hold_expires_at TIMESTAMPTZ NOT NULL,
+    -- Chose to pay by EFT or cash. Held until registration closes rather than
+    -- for minutes, because the money arrives on a bank's schedule.
+    pay_later       BOOLEAN NOT NULL DEFAULT FALSE,
     -- The form's idempotency key: a resubmitted form finds this row again rather
     -- than booking twice.
     checkout_key    TEXT NOT NULL,
-    -- sha256 of the token in the registrant's manage link.
-    manage_token_hash BYTEA NOT NULL UNIQUE,
     -- Confirmed by a payment that arrived after its hold lapsed and found the
     -- event full. Never rejected — the money is real — but flagged for a person.
     oversold        BOOLEAN NOT NULL DEFAULT FALSE,
@@ -149,9 +157,9 @@ CREATE TABLE attendees (
     -- Snapshots: what was bought, at the price it was bought for.
     ticket_name     TEXT NOT NULL,
     unit_price_cents BIGINT NOT NULL CHECK (unit_price_cents >= 0),
-    -- sha256 of the ticket's QR secret. NULL until the registration is
-    -- confirmed: a pending hold is not a ticket.
-    ticket_secret_hash BYTEA UNIQUE,
+    -- No ticket secret is stored: a ticket's code is the attendee id and an
+    -- HMAC of it under the server's key (internal/registrations/token.go), so
+    -- it can be re-sent at any time and checked at the door without a lookup.
     status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
     checked_in_at   TIMESTAMPTZ,
     checked_in_by   UUID REFERENCES admin_users(id),
@@ -178,15 +186,20 @@ CREATE INDEX ON answers (registration_id);
 CREATE TABLE payments (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     registration_id UUID NOT NULL REFERENCES registrations(id),
-    method          TEXT NOT NULL CHECK (method IN ('payfast', 'snapscan', 'cash', 'eft')),
+    -- A gateway's name (payfast, snapscan, …) or cash / eft. Checked for shape
+    -- rather than listed: gateways are defined in code, and adding one should
+    -- not need a migration.
+    method          TEXT NOT NULL CHECK (method ~ '^[a-z][a-z0-9_]*$'),
     amount_cents    BIGINT NOT NULL CHECK (amount_cents > 0),
-    currency        TEXT NOT NULL,
+    currency        TEXT NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
     status          TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'paid', 'failed', 'cancelled')),
     gateway_ref     TEXT,
     gateway_status  TEXT NOT NULL DEFAULT '',
     gateway_amount  TEXT NOT NULL DEFAULT '',
-    gateway_payload JSONB,
+    -- The notification as received, for an operator reconciling with the
+    -- gateway's dashboard. Text, not JSON: PayFast posts a form, SnapScan JSON.
+    gateway_payload TEXT NOT NULL DEFAULT '',
     -- Set for cash and EFT: the administrator who said the money arrived.
     recorded_by     UUID REFERENCES admin_users(id),
     note            TEXT NOT NULL DEFAULT '',

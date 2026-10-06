@@ -33,13 +33,13 @@ import (
 	"net/http"
 )
 
-// Request is an order presented to a gateway for payment. Amounts are integer
-// cents, as everywhere else in this project: a float total rounded differently
-// from a gateway's amount string is a real and hard-to-find class of bug.
+// Request is one payment presented to a gateway. Amounts are integer cents, as
+// everywhere else in this project: a float total rounded differently from a
+// gateway's amount string is a real and hard-to-find class of bug.
 type Request struct {
-	// OrderID is this store's own order id. A gateway echoes it back on the
-	// callback, and it is how the callback finds the order again.
-	OrderID     string
+	// PaymentID is our own id for this payment attempt. A gateway echoes it back
+	// on the callback, and it is how the callback finds the payment again.
+	PaymentID   string
 	AmountCents int64
 	Currency    string
 	// ItemName is a one-line description of the purchase, shown on the
@@ -142,9 +142,9 @@ const (
 // Callback is an authenticated asynchronous notification from a gateway,
 // normalised into this store's vocabulary.
 type Callback struct {
-	OrderID string // the gateway's echo of our order id
-	Ref     string // the gateway's own payment id
-	Status  string // the gateway's own status vocabulary, recorded verbatim
+	PaymentID string // the gateway's echo of our payment id
+	Ref       string // the gateway's own payment id
+	Status    string // the gateway's own status vocabulary, recorded verbatim
 	// Outcome is Status normalised. The mapping lives in the gateway's package,
 	// so no gateway's vocabulary reaches the handler.
 	Outcome Outcome

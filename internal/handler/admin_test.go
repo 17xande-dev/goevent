@@ -22,6 +22,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/payment"
+	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -69,6 +70,8 @@ type app struct {
 	images  *blob.Fake
 	outbox  *outbox.Store
 	events  *events.Store
+	regs    *registrations.Store
+	signer  registrations.Signer
 
 	// pool is the database behind all of the above, for the tests that need to
 	// take it away — an outage is a response an admin page has to get right.
@@ -158,23 +161,30 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	if err != nil {
 		t.Fatal(err)
 	}
+	regs := registrations.NewStore(pool)
+	signer := registrations.NewSigner([]byte("test secret"))
 	h := New(Deps{
-		Config:   cfg,
-		Log:      log,
-		Tmpl:     tmpl,
-		Events:   eventStore,
-		Gateways: registryOf(t, append([]payment.Gateway{gateway}, extraGateways...)...),
-		Mail:     mail,
-		Outbox:   queue,
-		Images:   images,
-		Users:    users,
+		Config:        cfg,
+		Log:           log,
+		Tmpl:          tmpl,
+		Events:        eventStore,
+		Registrations: regs,
+		Signer:        signer,
+		Gateways:      registryOf(t, append([]payment.Gateway{gateway}, extraGateways...)...),
+		Mail:          mail,
+		Outbox:        queue,
+		Images:        images,
+		Users:         users,
 	})
 
 	mux := http.NewServeMux()
-	// Everything main.go mounts, mounted the same way.
+	// Everything main.go mounts, mounted the same way: the callback outside the
+	// CSRF group, the registration form inside it.
 	h.RegisterPublic(mux)
+	h.RegisterPayments(mux)
 	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(users, log))
 	mux.Handle("/admin/", firstParty)
+	mux.Handle(RegisterPath, firstParty)
 
 	srv := httptest.NewServer(mux)
 	jar, err := cookiejar.New(nil)
@@ -188,7 +198,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	t.Cleanup(srv.Close)
 	return &app{
 		srv: srv, handler: h, gateway: gateway, mail: mail, images: images,
-		outbox: queue, users: users, pool: pool, events: eventStore,
+		outbox: queue, users: users, pool: pool, events: eventStore, regs: regs, signer: signer,
 	}
 }
 

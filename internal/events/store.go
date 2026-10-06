@@ -58,6 +58,19 @@ func (s *Store) List(ctx context.Context) ([]Event, error) {
 	return out, nil
 }
 
+// ListPublic returns the events the public list shows, soonest first.
+func (s *Store) ListPublic(ctx context.Context) ([]Event, error) {
+	rows, err := s.q.ListPublicEvents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("events: list public: %w", err)
+	}
+	out := make([]Event, len(rows))
+	for i, r := range rows {
+		out[i] = event(r)
+	}
+	return out, nil
+}
+
 func (s *Store) Get(ctx context.Context, id string) (Event, error) {
 	r, err := s.q.GetEvent(ctx, id)
 	if err != nil {
@@ -82,6 +95,7 @@ func (s *Store) Create(ctx context.Context, e Event) (Event, error) {
 		Venue: e.Venue, Address: e.Address, StartsAt: e.StartsAt, EndsAt: e.EndsAt,
 		Timezone: e.Timezone, Capacity: e.Capacity, Listed: e.Listed,
 		RegistrationOpensAt: e.RegistrationOpensAt, RegistrationClosesAt: e.RegistrationClosesAt,
+		PayLater: e.PayLater, PayLaterInstructions: e.PayLaterInstructions,
 	})
 	if err != nil {
 		return Event{}, translate(fmt.Errorf("events: create: %w", err))
@@ -97,6 +111,7 @@ func (s *Store) Update(ctx context.Context, e Event) (Event, error) {
 		Venue: e.Venue, Address: e.Address, StartsAt: e.StartsAt, EndsAt: e.EndsAt,
 		Timezone: e.Timezone, Capacity: e.Capacity, Listed: e.Listed,
 		RegistrationOpensAt: e.RegistrationOpensAt, RegistrationClosesAt: e.RegistrationClosesAt,
+		PayLater: e.PayLater, PayLaterInstructions: e.PayLaterInstructions,
 	})
 	if err != nil {
 		return Event{}, translate(fmt.Errorf("events: update: %w", err))
@@ -337,12 +352,20 @@ func nonNil(s []string) []string {
 	return s
 }
 
+// FromRow converts a generated row, for another store that read one inside its
+// own transaction — registrations, locking the event it is selling.
+func FromRow(r gen.Event) Event { return event(r) }
+
+// TicketTypeFromRow is FromRow for a ticket type.
+func TicketTypeFromRow(r gen.TicketType) TicketType { return ticketType(r) }
+
 func event(r gen.Event) Event {
 	e := Event{
 		ID: r.ID, Slug: r.Slug, Title: r.Title, Summary: r.Summary, Description: r.Description,
 		Venue: r.Venue, Address: r.Address, StartsAt: r.StartsAt, EndsAt: r.EndsAt,
 		Timezone: r.Timezone, Capacity: r.Capacity, Status: Status(r.Status), Listed: r.Listed,
 		RegistrationOpensAt: r.RegistrationOpensAt, RegistrationClosesAt: r.RegistrationClosesAt,
+		PayLater: r.PayLater, PayLaterInstructions: r.PayLaterInstructions,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	if r.ImageKey != nil {

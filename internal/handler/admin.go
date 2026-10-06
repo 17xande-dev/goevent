@@ -15,6 +15,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/payment"
+	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/justinas/nosurf"
 )
@@ -27,6 +28,10 @@ type Handler struct {
 	tmpl *Templates
 	// events is what people register for: events, ticket types and questions.
 	events *events.Store
+	// regs is what people did: registrations, attendees and payments.
+	regs *registrations.Store
+	// signer makes and checks manage links and ticket codes.
+	signer registrations.Signer
 	// gateways is every payment provider this deployment has configured, in the
 	// order the checkout offers them. A registry rather than one gateway because
 	// a deployment may offer more than one, and because the callback route has to
@@ -92,21 +97,24 @@ func (h *Handler) rateLimited(w http.ResponseWriter, r *http.Request) {
 // Deps is everything a Handler needs, by name, so that two values of the same
 // type can never be swapped by a careless positional call.
 type Deps struct {
-	Config   config.Config
-	Log      *slog.Logger
-	Tmpl     *Templates
-	Events   *events.Store
-	Gateways payment.Registry
-	Mail     mailer.Sender
-	Outbox   *outbox.Store
-	Images   blob.Storage
-	Users    *auth.Store
+	Config        config.Config
+	Log           *slog.Logger
+	Tmpl          *Templates
+	Events        *events.Store
+	Registrations *registrations.Store
+	Signer        registrations.Signer
+	Gateways      payment.Registry
+	Mail          mailer.Sender
+	Outbox        *outbox.Store
+	Images        blob.Storage
+	Users         *auth.Store
 }
 
 func New(d Deps) *Handler {
 	cfg, log := d.Config, d.Log
 	h := &Handler{
-		cfg: cfg, log: log, tmpl: d.Tmpl, events: d.Events, gateways: d.Gateways, mail: d.Mail,
+		cfg: cfg, log: log, tmpl: d.Tmpl, events: d.Events, regs: d.Registrations, signer: d.Signer,
+		gateways: d.Gateways, mail: d.Mail,
 		blob: d.Images, users: d.Users, outbox: d.Outbox,
 	}
 	// Storage is optional and must be non-nil, so that a caller omitting it gets
@@ -135,13 +143,16 @@ func New(d Deps) *Handler {
 //
 // CSRF is scoped to these routes rather than wrapped around the server's whole
 // mux, because nosurf sets a token cookie on every response it handles and the
-// embeddable catalog reads must stay cookie-free to be droppable into another
-// origin's page. Scoping by group is also what makes the payment callback
-// CSRF-exempt: it is not in this group at all, rather than being excused by an
-// exempt-path string that has to keep matching the route.
+// event pages that only read should stay cookie-free and cacheable. Scoping by
+// group is also what makes the payment callback CSRF-exempt: it is not in this
+// group at all, rather than being excused by an exempt-path string that has to
+// keep matching the route.
+//
+// The caller mounts this at /admin/ and at RegisterPath.
 func (h *Handler) FirstPartyHandler(protect middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 	h.RegisterAdmin(mux, protect)
+	h.registerRegistration(mux)
 	// This mux is reached only for paths the outer one handed over, so its own
 	// catch-all is what stops /admin/nonsense falling back to Go's plain 404
 	// while every other unknown URL gets the page.
@@ -373,7 +384,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, nam
 // storeError maps a store error onto a response: missing rows are 404s, and
 // anything else is a genuine server fault.
 func (h *Handler) storeError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, events.ErrNotFound) {
+	if errors.Is(err, events.ErrNotFound) || errors.Is(err, registrations.ErrNotFound) {
 		h.notFound(w, r)
 		return
 	}

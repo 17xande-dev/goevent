@@ -18,9 +18,9 @@ func testConfig() Config {
 		MerchantKey: "46f0cd694581a",
 		Passphrase:  "jt7NOE43FZPn",
 		Sandbox:     true,
-		ReturnURL:   "https://store.example/cart/checkout/success",
-		CancelURL:   "https://store.example/cart/checkout/cancel",
-		NotifyURL:   "https://store.example/payments/payfast/callback",
+		ReturnURL:   "https://events.example/checkout/success",
+		CancelURL:   "https://events.example/checkout/cancel",
+		NotifyURL:   "https://events.example/payments/payfast/callback",
 	}
 }
 
@@ -39,10 +39,10 @@ func testGateway(t *testing.T, edit func(*Config)) *Gateway {
 
 func testRequest() payment.Request {
 	return payment.Request{
-		OrderID:     "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+		PaymentID:   "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
 		AmountCents: 29900,
 		Currency:    "ZAR",
-		ItemName:    "Test Store order 3F2504E0",
+		ItemName:    "Family Camp 2026 K7Q-4MZ",
 		NameFirst:   "Jane",
 		NameLast:    "Doe",
 		Email:       "jane@example.com",
@@ -65,14 +65,15 @@ func testRequest() payment.Request {
 func TestPayFast_SignatureMatchesKnownVector(t *testing.T) {
 	const (
 		wantString = "merchant_id=10000100&merchant_key=46f0cd694581a" +
-			"&return_url=https%3A%2F%2Fstore.example%2Fcart%2Fcheckout%2Fsuccess%3Forder%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301" +
-			"&cancel_url=https%3A%2F%2Fstore.example%2Fcart%2Fcheckout%2Fcancel%3Forder%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301" +
-			"&notify_url=https%3A%2F%2Fstore.example%2Fpayments%2Fpayfast%2Fcallback" +
+			"&return_url=https%3A%2F%2Fevents.example%2Fcheckout%2Fsuccess%3Fpayment%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301" +
+			"&cancel_url=https%3A%2F%2Fevents.example%2Fcheckout%2Fcancel%3Fpayment%3D3f2504e0-4f89-41d3-9a0c-0305e82c3301" +
+			"&notify_url=https%3A%2F%2Fevents.example%2Fpayments%2Fpayfast%2Fcallback" +
 			"&name_first=Jane&name_last=Doe&email_address=jane%40example.com" +
 			"&m_payment_id=3f2504e0-4f89-41d3-9a0c-0305e82c3301" +
-			"&amount=299.00&item_name=Test+Store+order+3F2504E0" +
+			"&amount=299.00&item_name=Family+Camp+2026+K7Q-4MZ" +
 			"&passphrase=jt7NOE43FZPn"
-		wantDigest = "31a99e48c5772738e930f0744c9f671c"
+		// md5sum of wantString, computed outside Go.
+		wantDigest = "5e1aec2ca5c2229b446a4b8351cf5775"
 	)
 
 	g := testGateway(t, nil)

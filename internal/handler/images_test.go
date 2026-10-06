@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,11 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/dbtest"
-	"github.com/17xande-dev/goevent/internal/payment"
-	"github.com/17xande-dev/mailer"
 )
 
 // diskApp is a deployment whose images are files this server serves — the
@@ -31,16 +27,7 @@ func diskApp(t *testing.T) (*httptest.Server, *blob.Disk, string) {
 	cfg := testConfig()
 	cfg.ImageDir = dir
 
-	pool := dbtest.Pool(t)
-	tmpl, err := ParseTemplates("", storage)
-	if err != nil {
-		t.Fatalf("ParseTemplates: %v", err)
-	}
-	h := New(Deps{
-		Config: cfg, Log: slog.New(slog.DiscardHandler), Tmpl: tmpl,
-		Gateways: registryOf(t, payment.NewFake()), Mail: mailer.NewFake(), Images: storage,
-		Users: auth.NewStore(pool),
-	})
+	h := New(testDeps(t, dbtest.Pool(t), cfg, "", storage))
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)

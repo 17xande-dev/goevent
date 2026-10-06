@@ -1,0 +1,23 @@
+{{/*
+  What a payment came to, shared by the return page and the status poll. Still
+  pending keeps polling: the trigger lives on the element the response replaces,
+  so each copy carries it, and polling stops by itself once another branch renders.
+  Every 5 seconds, not 1: somebody is unlocking a phone and typing a PIN, and the
+  limiter this route sits behind allows 30 a minute.
+*/}}
+{{define "checkout_status_block"}}
+{{if not .Found}}
+  <p class="muted">There is nothing to report for this payment.</p>
+{{else if .Paid}}
+  <p><strong>Payment received.</strong> Your registration is confirmed and your tickets are on their way to
+  {{.Registration.ContactEmail}}.</p>
+  {{with .Manage}}<p><a class="button" href="{{.}}">See your registration</a></p>{{end}}
+{{else if .Failed}}
+  <p><strong>That payment did not go through.</strong> Your places are held for a little while if you would
+  like to <a href="/events/{{.Event.Slug}}">try again</a>.</p>
+{{else}}
+  <p hx-get="/checkout/status?payment={{.Payment.ID}}" hx-trigger="every 5s" hx-swap="outerHTML" class="muted">
+    Waiting for the payment to be confirmed… You can close this page: your tickets are emailed either way.
+  </p>
+{{end}}
+{{end}}

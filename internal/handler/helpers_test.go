@@ -15,9 +15,12 @@ import (
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/payment"
+	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // newPublic mirrors how main.go mounts the server for an anonymous visitor:
@@ -27,23 +30,16 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	t.Helper()
 
 	pool := dbtest.Pool(t)
-	images := blob.NewFake()
-	tmpl, err := ParseTemplates(templateDir, images)
-	if err != nil {
-		t.Fatalf("ParseTemplates: %v", err)
-	}
-	log := slog.New(slog.DiscardHandler)
 	gateway := payment.NewFake()
-	users := auth.NewStore(pool)
-	h := New(Deps{
-		Config: cfg, Log: log, Tmpl: tmpl,
-		Gateways: registryOf(t, gateway), Mail: mailer.NewFake(), Images: images,
-		Users: users,
-	})
+	d := testDeps(t, pool, cfg, templateDir, blob.NewFake(), gateway)
+	h := New(d)
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)
-	mux.Handle("/admin/", h.FirstPartyHandler(middleware.RequireAdmin(users, log)))
+	h.RegisterPayments(mux)
+	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(d.Users, d.Log))
+	mux.Handle("/admin/", firstParty)
+	mux.Handle(RegisterPath, firstParty)
 
 	srv := httptest.NewServer(middleware.Chain(mux, middleware.SecurityHeaders(middleware.Policy{
 		FrameAncestors: cfg.EmbedOrigins,
@@ -52,6 +48,26 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// testDeps is everything a Handler needs, real stores on pool and fakes at the
+// network boundaries, for the harnesses that do not need a handle on each part.
+func testDeps(t *testing.T, pool *pgxpool.Pool, cfg config.Config, templateDir string, images blob.Storage, gateways ...payment.Gateway) Deps {
+	t.Helper()
+	tmpl, err := ParseTemplates(templateDir, images)
+	if err != nil {
+		t.Fatalf("ParseTemplates: %v", err)
+	}
+	if len(gateways) == 0 {
+		gateways = []payment.Gateway{payment.NewFake()}
+	}
+	return Deps{
+		Config: cfg, Log: slog.New(slog.DiscardHandler), Tmpl: tmpl,
+		Events: events.NewStore(pool), Registrations: registrations.NewStore(pool),
+		Signer:   registrations.NewSigner([]byte("test secret")),
+		Gateways: registryOf(t, gateways...), Mail: mailer.NewFake(), Images: images,
+		Users: auth.NewStore(pool),
+	}
 }
 
 // testJPEG is enough of a JPEG for content sniffing to call it one.
