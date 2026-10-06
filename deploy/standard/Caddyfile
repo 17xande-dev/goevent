@@ -1,0 +1,10 @@
+# {$DOMAIN} and {$ACME_EMAIL} are read from the container's environment, which
+# compose.yaml fills from .env — there is nothing to edit here.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	reverse_proxy server:8080
+	encode zstd gzip
+}

@@ -1,0 +1,71 @@
+# sqlc generates the row structs and scan code for the stores in internal/
+# from the SQL in internal/db/queries, checked against the real schema in
+# internal/db/migrations.
+#
+# It is a *build-time* tool and nothing it produces adds a runtime dependency: the
+# generated code uses pgx, which was already here. It is pinned in the Makefile
+# rather than as a `go tool` directive so that go.mod keeps stating the
+# dependencies of the *binary* — see "Dependencies" in docs/development.md.
+#
+# Regenerate with `make sqlc`; CI runs `sqlc diff` and fails if the checked-in
+# code is stale.
+version: "2"
+sql:
+  - engine: postgresql
+    # sqlc reads the Up sections of the same migrations the application embeds.
+    schema: internal/db/migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: gen
+        out: internal/db/gen
+        sql_package: pgx/v5
+
+        # A :many query with no rows returns an empty slice rather than nil, which
+        # is what the stores already promised their callers.
+        emit_empty_slices: true
+        # A nullable column becomes *string rather than pgtype.Text, so the
+        # generated code speaks Go rather than pgx.
+        emit_pointers_for_null_types: true
+
+        rename:
+          # sqlc's initialisms, corrected to the ones the domain models use, so
+          # the mapping between a row and a model reads as the same word twice.
+          ticket_type_ids: "TicketTypeIDs"
+
+        overrides:
+          # UUIDs stay `string` across the whole codebase. pgx parses a string
+          # into a uuid parameter and renders one back, so this costs nothing at
+          # runtime and keeps ids as the one type they are everywhere else — in a
+          # URL path, in a form field, in a template. The alternative,
+          # pgtype.UUID, would put a conversion at every call site and a second
+          # id type in the domain models.
+          #
+          # A malformed id therefore reaches Postgres and comes back as error
+          # 22P02, which each store's translate() already maps to ErrNotFound.
+          - db_type: "uuid"
+            go_type: "string"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+
+          # Timestamps as time.Time, and a nullable one as *time.Time — which is
+          # exactly the distinction the hand-written scan already drew for
+          # payments.paid_at, where zero and "never" are different facts.
+          # emit_pointers_for_null_types adds the pointer for the nullable case,
+          # so this one override yields time.Time and *time.Time respectively.
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+
+          # Quantities and stock counts as int. They are INTEGER in the schema,
+          # so sqlc would default to int32 and put a conversion at every use.
+          - db_type: "pg_catalog.int4"
+            go_type: "int"

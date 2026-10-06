@@ -1,0 +1,82 @@
+# goevent behind Caddy, with images and purchased files in R2 and mail over SMTP.
+#
+# Copy this directory to the server, then:
+#
+#   cp .env.example .env && chmod 600 .env    # and fill it in
+#   docker compose up -d
+#
+# Every step, from an empty server to a claimed admin account, is in
+# docs/deploy/standard.md.
+name: goevent
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goevent
+      POSTGRES_DB: goevent
+      # Read once, when the data directory is first created. Changing it in .env
+      # later does not change the database's password — see the guide's
+      # "Changing a secret".
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goevent -d goevent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    image: ghcr.io/17xande-dev/goevent:${GOEVENT_VERSION:?set GOEVENT_VERSION in .env}
+    restart: unless-stopped
+    env_file: .env
+    # Derived here rather than asked for in .env, so the values that have to
+    # agree cannot disagree.
+    environment:
+      DATABASE_URL: postgres://goevent:${POSTGRES_PASSWORD}@postgres:5432/goevent?sslmode=disable
+      BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
+      # Caddy is the only way in, and it discards any X-Forwarded-For a client
+      # sends, so the leftmost entry is the real peer. Wrong behind anything
+      # that appends to the header instead — Cloudflare's proxy included; see
+      # CLIENT_IP_SOURCE in .env.example at the repo root.
+      CLIENT_IP_SOURCE: forwarded
+      # No default on purpose. The server's own default is the sandbox, which
+      # is safe for a first afternoon and silently wrong for a live deployment: it
+      # takes no money and looks fine. A deploy says which it means.
+      PAYFAST_SANDBOX: ${PAYFAST_SANDBOX:?set PAYFAST_SANDBOX in .env to true or false}
+    # Optional theme, read-only. Always mounted so that turning a theme on is
+    # two lines in .env (TEMPLATE_DIR / STATIC_DIR) and no edit here. Nothing
+    # reads it until those are set; if ./theme does not exist Docker creates it
+    # empty. See docs/theming.md.
+    volumes:
+      - ./theme:/theme:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Terminates TLS with a Let's Encrypt certificate it obtains and renews on its
+  # own, and is the only container that publishes a port. The Caddyfile reads
+  # DOMAIN and ACME_EMAIL from here, so it never needs editing.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

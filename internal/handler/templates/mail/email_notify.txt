@@ -1,0 +1,12 @@
+{{/*
+  The organiser's copy of a confirmed registration, sent to NOTIFY_EMAIL. Plain
+  text only: it is read by a person deciding whether anything needs doing, and
+  the admin has the rest.
+*/}}New registration for {{.EventTitle}}
+
+Reference: {{.Reference}}
+Contact:   {{.ContactName}} <{{.ContactEmail}}>
+Tickets:   {{.TicketCount}}
+Total:     {{.Currency}} {{money .TotalCents}}
+
+{{.AdminURL}}

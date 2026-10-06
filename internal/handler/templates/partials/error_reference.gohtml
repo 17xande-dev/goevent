@@ -1,0 +1,26 @@
+{{/*
+  The reference, and — in development only — what actually went wrong. Shared by
+  the 4xx and 5xx pages, which is why it is a partial rather than living in either
+  of them.
+
+  Detail is populated by the handler only when BASE_URL is not https, which is
+  this project's existing signal for "not production" and the same one that
+  decides Secure cookies and HSTS. The Go error string names tables, columns and
+  constraints, so it is reconnaissance in front of a stranger and a first
+  diagnosis in front of the person writing the code.
+*/}}
+{{define "error_reference"}}
+{{if .Reference}}
+  <p class="reference">
+    <small>Reference <code>{{.Reference}}</code> — quote this if you get in touch.</small>
+  </p>
+{{end}}
+
+{{if .Detail}}
+  <div class="detail">
+    <p><strong>Development detail.</strong> This appears because <code>BASE_URL</code>
+    is not <code>https://</code>. It is never shown in production.</p>
+    <pre class="scroll-x">{{.Detail}}</pre>
+  </div>
+{{end}}
+{{end}}

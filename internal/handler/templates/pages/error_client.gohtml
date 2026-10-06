@@ -1,0 +1,24 @@
+{{/*
+  4xx — you asked for something that is not yours, or came too fast. The visitor can
+  usually do something about it, so the page offers somewhere to go.
+
+  It is a page of its own, beside error_server, because the two say genuinely
+  different things and a deployment should be able to reword one without touching the
+  other. 404 has a third, not_found, because it is the common one and deserves its
+  own wording.
+*/}}
+{{define "content"}}
+
+<div class="error-page">
+  <p class="code" aria-hidden="true">{{.Status}}</p>
+  <h1>{{.Heading}}</h1>
+  <p class="lede muted">{{.Message}}</p>
+
+  <p class="see-all">
+    <a href="/events" hx-boost="true">See upcoming events</a>
+  </p>
+
+  {{template "error_reference" .}}
+</div>
+
+{{end}}

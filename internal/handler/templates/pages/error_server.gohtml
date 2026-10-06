@@ -1,0 +1,26 @@
+{{/*
+  5xx — this is ours. The visitor can do nothing except come back, and telling them
+  otherwise wastes their time.
+
+  If you override this page, keep the reference on it: it is the only thing
+  connecting what a customer saw to the line in the log that says why.
+*/}}
+{{define "content"}}
+
+<div class="error-page">
+  <p class="code" aria-hidden="true">{{.Status}}</p>
+  <h1>{{.Heading}}</h1>
+  <p class="lede muted">{{.Message}}</p>
+
+  {{/*
+    No "try again" button. A 500 that is going to succeed on a retry will succeed
+    when they reload; one that is not will waste their time twice.
+  */}}
+  <p class="see-all">
+    <a href="/" hx-boost="true">Go to the front page</a>
+  </p>
+
+  {{template "error_reference" .}}
+</div>
+
+{{end}}

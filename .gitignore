@@ -1,0 +1,12 @@
+.env
+/goevent
+/bin/
+
+# Dumps backup.sh writes when a deployment directory is tried out in place.
+deploy/*/backups/
+
+# `make run` writes uploaded images here; see IMAGE_DIR in the Makefile.
+.local/
+
+.codex
+

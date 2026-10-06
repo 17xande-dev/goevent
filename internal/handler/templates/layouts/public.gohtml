@@ -1,0 +1,63 @@
+{{/*
+  The public chrome. Every file under templates/pages/ is rendered inside this
+  one: the handler executes "layout" from that page's own template set, and the
+  page supplies "content".
+
+  Two blocks are the whole extension mechanism. A block is a default definition and
+  the place it renders, written together — so this file says what a page may fill
+  in, and a page that fills in nothing still renders correctly. Because each page
+  gets its own set, a definition in one page reaches this layout on that page and
+  nowhere else.
+
+    content    the page itself. Every page defines it.
+    nav_extra  an addition to the site nav, for a page that has one. Empty by
+               default, which is what most pages want.
+
+  The cost of the block form is that a page which defines neither renders an empty
+  shell rather than failing, so ParseTemplates asserts at startup that every page
+  defines "content". A page that forgets is a boot failure, not a blank page.
+*/}}
+{{define "layout"}}
+{{template "document_head" .}}
+<body>
+<header class="site-header">
+  <div class="inner">
+    {{/*
+      The mark is a bundled asset. Drop your own logo.svg into STATIC_DIR to replace
+      it — the URL carries a hash of the file, so the new one appears immediately
+      rather than after a cache expires.
+    */}}
+    <a class="brand" href="/">
+      <img src="{{asset "logo.svg"}}" alt="" width="28" height="28">
+      {{.SiteName}}
+    </a>
+    <nav>
+      <a href="/events">Events</a>
+      {{block "nav_extra" .}}{{end}}
+      {{/*
+        The account menu, for a browser signed in to the admin: fetched rather than
+        rendered, so this page is the same for everybody and stays cacheable, and
+        the admin session — whose cookie is scoped to /admin — is never needed
+        here. A visitor with no session gets an empty 204 and sees nothing.
+      */}}
+      <span class="account-slot" hx-get="/admin/account/menu" hx-trigger="load"
+            hx-swap="outerHTML"></span>
+    </nav>
+  </div>
+</header>
+<main>
+<div class="inner">
+{{block "content" .}}{{end}}
+</div>
+</main>
+<footer class="site-footer">
+  <div class="inner columns">
+    <div>
+      <strong>{{.SiteName}}</strong>
+      <p class="muted"><small>Powered by goevent.</small></p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
+{{end}}

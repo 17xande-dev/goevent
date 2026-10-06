@@ -1,0 +1,44 @@
+{{/*
+  The account menu, for both headers: the admin's, and the public site's for a
+  browser signed in to the admin (see accountMenu). A <details> rather than a
+  scripted dropdown: it opens and closes with no JavaScript of ours, from the
+  keyboard as well as the mouse.
+
+  "account_menu_open" and "account_menu_close" go around whatever links the
+  caller adds first — the public site's menu leads with a way into the admin —
+  and the close carries what every menu has: your profile settings and signing
+  out. Two halves rather than one template with a flag, because html/template
+  passes a single value and a flag in the page data would be for this alone.
+
+  Signing out is a POST with the CSRF token, as it always was; from the
+  public site the fragment is rendered under the same nosurf pool, so the token
+  is good there too.
+*/}}
+{{define "account_menu_open"}}
+<details class="account-menu">
+  <summary aria-label="Account menu for {{.User.Display}}" data-tooltip="Profile settings">{{template "profile_icon"}}</summary>
+  <div class="menu">
+    <p class="who"><strong>{{.User.Display}}</strong>{{if ne .User.Display .User.Email}}<br><small>{{.User.Email}}</small>{{end}}</p>
+{{end}}
+
+{{define "account_menu_close"}}
+    <a href="/admin/account">Profile settings</a>
+    <form method="post" action="/admin/logout">
+      {{template "csrf" .CSRFToken}}
+      <button type="submit">Sign out</button>
+    </form>
+  </div>
+</details>
+{{end}}
+
+{{/*
+  The profile icon. A line drawing in currentColor, sized and stroked by
+  styles.css (.profile-icon). Decorative: the control around it carries the
+  accessible name.
+
+  It carries its size and stroke as attributes too — SVG presentation
+  attributes, which any CSS rule overrides — for a theme whose stylesheet
+  predates this icon. Without them an unstyled inline SVG is drawn 300×150 and
+  filled solid black, which is how a copied stylesheet first met it.
+*/}}
+{{define "profile_icon"}}<svg class="profile-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>{{end}}

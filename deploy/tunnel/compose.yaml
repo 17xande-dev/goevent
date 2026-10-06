@@ -1,0 +1,50 @@
+# Production behind a Cloudflare Tunnel, with R2 storage and Microsoft Graph
+# mail. The tunnel routes the server only; images use R2's public custom domain.
+name: goevent
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goevent
+      POSTGRES_DB: goevent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goevent -d goevent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    image: ghcr.io/17xande-dev/goevent:${GOEVENT_VERSION:?set GOEVENT_VERSION in .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://goevent:${POSTGRES_PASSWORD}@postgres:5432/goevent?sslmode=disable
+      BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
+      CLIENT_IP_SOURCE: cloudflare
+      PAYFAST_SANDBOX: ${PAYFAST_SANDBOX:?set PAYFAST_SANDBOX in .env to true or false}
+    # Optional theme, read-only. Always mounted so that turning a theme on is
+    # two lines in .env (TEMPLATE_DIR / STATIC_DIR) and no edit here. Nothing
+    # reads it until those are set; if ./theme does not exist Docker creates it
+    # empty. See docs/theming.md.
+    volumes:
+      - ./theme:/theme:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - server
+
+volumes:
+  pgdata:

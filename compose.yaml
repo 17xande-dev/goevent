@@ -1,0 +1,86 @@
+# Local development: Go, Postgres, Mailpit, and ordinary files. Production
+# deployments in deploy/ use an R2 bucket for event images.
+#
+# The host ports are shifted by one from the usual (5433, 1026, 8026, 8081) so
+# this stack runs beside gostore's, or any other local Postgres and mailpit.
+# The credentials below are published development-only values: never use them
+# for a deployment.
+name: goevent
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: goevent
+      POSTGRES_PASSWORD: goevent
+      POSTGRES_DB: goevent
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goevent -d goevent"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1026:1025"
+      - "127.0.0.1:8026:8025"
+
+  server:
+    build: .
+    # make up supplies the host UID/GID and creates the bind directory, so
+    # container uploads and host-side make run share writable files.
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://goevent:goevent@postgres:5432/goevent?sslmode=disable
+      PORT: "8080"
+      BASE_URL: ${BASE_URL:-http://localhost:8081}
+      SITE_NAME: ${SITE_NAME:-goevent}
+      CURRENCY: ${CURRENCY:-ZAR}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      PAYFAST_MERCHANT_ID: ${PAYFAST_MERCHANT_ID:-10000100}
+      PAYFAST_MERCHANT_KEY: ${PAYFAST_MERCHANT_KEY:-46f0cd694581a}
+      PAYFAST_PASSPHRASE: ${PAYFAST_PASSPHRASE:-jt7NOE43FZPn}
+      PAYFAST_SANDBOX: ${PAYFAST_SANDBOX:-true}
+      PAYFAST_ALLOWED_CIDRS: ${PAYFAST_ALLOWED_CIDRS:-any}
+      PAYFAST_NOTIFY_URL: ${PAYFAST_NOTIFY_URL:-}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_TLS: none
+      EMAIL_FROM: ${EMAIL_FROM:-events@goevent.example}
+      NOTIFY_EMAIL: ${NOTIFY_EMAIL:-organiser@goevent.example}
+      # Public development key, never use for a live deployment. Production
+      # requires a generated EMAIL_QUEUE_KEY (or EMAIL_QUEUE_KEY_FILE).
+      EMAIL_QUEUE_KEY: ${EMAIL_QUEUE_KEY:-abababababababababababababababababababababababababababababababab}
+      IMAGE_DIR: /images
+      # An older .env may still contain S3 settings. Development deliberately
+      # uses disk; choose deploy/ for an R2-backed installation.
+      BLOB_ENDPOINT: ""
+      BLOB_BUCKET: ""
+      BLOB_ACCESS_KEY_ID: ""
+      BLOB_SECRET_ACCESS_KEY: ""
+      BLOB_PUBLIC_BASE_URL: ""
+      TEMPLATE_DIR: /theme/templates
+      STATIC_DIR: /theme/static
+      THEME_RELOAD: ${THEME_RELOAD:-true}
+    volumes:
+      - ./.local/images:/images
+      - ./theme:/theme:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  pgdata:

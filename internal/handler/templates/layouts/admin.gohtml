@@ -1,0 +1,53 @@
+{{/*
+  The admin chrome, for every file under templates/admin/. It carries the nav and
+  the account menu with its sign-out form, which is the reason it exists as a
+  second layout rather than a flag on the first: the public layout renders no
+  account menu of its own — the public one is fetched, and only a signed-in
+  browser gets one — so the sign-in page has nothing to show by mistake. That used
+  to be a convention held up by every admin page remembering to call "adminnav";
+  it is now structural.
+
+  It offers "content" and nothing else. A block the admin never fills is a block
+  nobody maintains.
+*/}}
+{{define "layout"}}
+{{template "document_head" .}}
+<body class="admin">
+<header class="site-header">
+  <div class="inner">
+    <a class="brand" href="/admin/">
+      <img src="{{asset "logo.svg"}}" alt="" width="28" height="28">
+      {{.SiteName}}
+    </a>
+    <nav>
+      <a href="/admin/events">Events</a>
+      {{/*
+        Hidden from a role that could not open it — presentation only, and the
+        route refuses the same request whatever this renders. See requirePerm.
+      */}}
+      {{if .Can "users.write"}}<a href="/admin/users">Users</a>{{end}}
+      <a href="/events">Public site</a>
+    </nav>
+    {{/*
+      Your account: profile settings and signing out, behind one icon so the header does
+      not grow with a long name.
+    */}}
+    {{template "account_menu_open" .}}
+    {{template "account_menu_close" .}}
+  </div>
+</header>
+<main>
+<div class="inner">
+{{block "content" .}}{{end}}
+</div>
+</main>
+<footer class="site-footer">
+  <div class="inner columns">
+    <div>
+      <p class="muted"><small>Powered by goevent.</small></p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
+{{end}}

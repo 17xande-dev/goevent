@@ -1,0 +1,74 @@
+{{/*
+  The default templates are meant to be readable, correct, and replaced. Point
+  TEMPLATE_DIR at a directory holding a file of the same name *in the same
+  subdirectory* to override any of them, and STATIC_DIR at one holding your own
+  styles.css or logo.svg — neither needs a rebuild.
+
+  Class names are the contract between these templates and styles.css. Overriding one
+  and not the other works as long as the names hold, which is why they describe what
+  a thing *is* — .site-header, .account-menu — rather than how it looks.
+*/}}
+
+{{/*
+  Everything from the doctype to </head>, shared by both layouts. It lives in a
+  partial rather than being written twice because the two settings below are
+  load-bearing and a second copy is a second place to get them wrong.
+*/}}
+{{define "document_head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — {{.SiteName}}</title>
+{{/*
+  Two settings, both load-bearing. Keep them if you override "document_head".
+
+  includeIndicatorStyles:false — htmx injects a <style> block for the indicator
+  classes as soon as it loads, and style-src 'self' blocks it. Silently, apart from
+  a console warning, and it fails *open*: the rule that hides an hx-indicator never
+  applies, leaving a spinner permanently visible. So the injection is off and
+  styles.css carries those rules instead. Keep the .htmx-indicator rules if you
+  replace styles.css — the two halves go together.
+
+  responseHandling — htmx's default is to swap 2xx and to swap *nothing* on 4xx or
+  5xx. That default silently throws away every refusal the server sends as a 4xx
+  carrying the fragment meant for the page: the browser drops it, and the person
+  who clicked watches nothing happen. Errors are swapped here instead, and error:true is kept so
+  htmx:responseError still fires for anything listening.
+
+  The other half of that rule lives in the server: a response that is a whole page
+  rather than a fragment sends HX-Retarget: body, so an error page replaces the
+  document instead of being pasted into whatever small element asked. See
+  internal/handler/errors.go.
+*/}}
+<meta name="htmx-config" content='{"includeIndicatorStyles":false,
+  "responseHandling":[{"code":"204","swap":false},
+                      {"code":"[23]..","swap":true},
+                      {"code":"[45]..","swap":true,"error":true}]}'>
+{{/*
+  Both bundled, both served from this origin: no CDN, so the CSP stays 'self' for
+  scripts and styles alike and no third-party server sits on the payment path.
+*/}}
+<link rel="stylesheet" href="{{asset "styles.css"}}">
+{{/*
+  A hosted font service's stylesheet, when FONT_CSS_URL names one — an Adobe Fonts
+  kit is the usual case. It comes before nothing and after styles.css deliberately:
+  the kit only declares @font-face rules, so order against the theme does not
+  matter, and putting it second keeps the site's own stylesheet the one that loads
+  first if the service is slow.
+
+  FONT_ORIGINS must list this URL's origin, and the origin serving the font files —
+  for a Typekit kit those are use.typekit.net and p.typekit.net, two hosts because
+  the kit CSS and the .woff2 files it points at live on different ones. The server
+  refuses to boot if FONT_ORIGINS omits the stylesheet's own origin, but it cannot
+  know the second one, so a kit that loads and still renders in the fallback font
+  means p.typekit.net is missing from the list.
+
+  Only the <link> form of an embed is supported. A font service's JavaScript loader
+  would need script-src widened and a nonce for the inline snippet it hands you;
+  see internal/middleware/securityheaders.go for why that answer is no.
+*/}}
+{{with .FontCSSURL}}<link rel="stylesheet" href="{{.}}">{{end}}
+<script src="{{asset "htmx.min.js"}}" defer></script>
+</head>
+{{end}}

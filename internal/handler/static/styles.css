@@ -1,0 +1,1150 @@
+/*
+ * goevent's default theme.
+ *
+ * Plain CSS with nesting and custom properties — no framework, no build step, no
+ * preprocessor. It is one file so that reading it is possible and replacing it is
+ * trivial: drop your own styles.css into STATIC_DIR and this one is not served.
+ *
+ * Everything an adopter is likely to change is a custom property in the block
+ * below. Rebranding should mean editing a dozen values, not hunting through
+ * selectors — which is also why there are no colour literals anywhere else in this
+ * file.
+ *
+ * No web font in the default. The system stack is what every operating system already
+ * has, it loads instantly, and it puts no request to somebody else's server on the
+ * page — including the checkout.
+ *
+ * Two ways to change that, neither of which is only a CSS edit. Self-host: drop the
+ * .woff2 into STATIC_DIR and point --font at it with a /static/... URL, which the CSP
+ * already allows because the file is served from this origin. Or use a hosted service:
+ * set FONT_ORIGINS and FONT_CSS_URL, which widen font-src and style-src and link the
+ * service's stylesheet from the layout. Either way --font below is what actually
+ * applies the family; making it available and using it are separate steps. See
+ * "Web fonts" in docs/theming.md.
+ */
+
+:root {
+  /* Palette. Deliberately neutral: this is an open-source store and a default
+     nobody has branded yet. Ink on paper, one accent for actions. */
+  --paper: #ffffff;
+  --paper-sunk: #f6f6f4;
+  --ink: #1a1a18;
+  --ink-soft: #5c5c56;
+  --ink-faint: #8a8a82;
+  --rule: #e4e4df;
+  --accent: #1f4d3f;
+  --accent-ink: #ffffff;
+  --warn: #8a2f1d;
+
+  /* Type. One stack, sized fluidly so the page reads on a phone and on a laptop
+     without a media query for it. */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text: 1rem;
+  --text-small: 0.875rem;
+  --text-large: 1.125rem;
+  --title: clamp(1.5rem, 1.2rem + 1.4vw, 2.25rem);
+  --title-page: clamp(1.75rem, 1.3rem + 2vw, 3rem);
+
+  /* Spacing, on a single scale so vertical rhythm stays predictable. */
+  --gap-xs: 0.25rem;
+  --gap-sm: 0.5rem;
+  --gap: 1rem;
+  --gap-md: 1.5rem;
+  --gap-lg: 2.5rem;
+  --gap-xl: 4rem;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+  --measure: 68ch;      /* comfortable reading width for prose */
+  --page: 1120px;       /* the content column */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Anchored jumps and hx-boost navigations land below the header rather than
+     under it. */
+  scroll-padding-block-start: var(--gap-lg);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: var(--text) / 1.6 var(--font);
+  -webkit-text-size-adjust: 100%;
+
+  /* The page is a column: header, content, footer — with the footer pushed down on
+     short pages rather than floating mid-screen. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* --- The page frame ------------------------------------------------------- */
+
+.site-header {
+  border-block-end: 1px solid var(--rule);
+
+  > .inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+    padding-block: var(--gap);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    color: inherit;
+    text-decoration: none;
+    font-size: var(--text-large);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+
+    /* The bundled mark is a line drawing in currentColor, so it takes the
+       surrounding text colour and needs no second file for a dark header. */
+    > img {
+      display: block;
+    }
+  }
+
+  nav {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-md);
+    font-size: var(--text-small);
+    /* The admin nav grew a fifth link with the accounts pages, which is one
+       more than fits a 390px phone in a row. Wrapping rather than scrolling:
+       these are five short words, and a horizontally scrolling header is a
+       navigation people do not find. */
+    flex-wrap: wrap;
+    row-gap: var(--gap-sm);
+
+    a {
+      color: var(--ink-soft);
+      text-decoration: none;
+
+      &:hover {
+        color: var(--ink);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+    }
+  }
+}
+
+/* --- Your account in the header --------------------------------------------
+   The admin header and the storefront share one account menu
+   (partials/account.gohtml): an icon, a tooltip, and a dropdown. */
+
+.profile-icon {
+  display: block;
+  width: 1.375rem;
+  height: 1.375rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.account-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+
+  &:hover {
+    color: var(--ink);
+    background: var(--paper-sunk);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+}
+
+/* A tooltip from the element's own data-tooltip, on hover and on keyboard focus.
+   CSS rather than a title attribute: a title waits a second, ignores focus, and
+   cannot be styled. Below the element and right-aligned, because these sit at
+   the header's right edge and a centred one would run off a phone screen. */
+[data-tooltip] {
+  position: relative;
+
+  &::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    inset-block-start: calc(100% + var(--gap-xs));
+    inset-inline-end: 0;
+    z-index: 10;
+    padding: var(--gap-xs) var(--gap-sm);
+    border-radius: var(--radius);
+    background: var(--ink);
+    color: var(--paper);
+    font-size: var(--text-small);
+    font-weight: 400;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms ease-in;
+  }
+
+  &:hover::after,
+  &:focus-visible::after {
+    opacity: 1;
+  }
+}
+
+/* The account menu: a <details>, so it opens without script. Its tooltip is for
+   the closed state only — once open, the menu says the rest. */
+.account-menu {
+  position: relative;
+  font-size: var(--text-small);
+
+  > summary {
+    list-style: none;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+  }
+
+  &[open] > summary::after {
+    display: none;
+  }
+
+  > .menu {
+    position: absolute;
+    inset-block-start: calc(100% + var(--gap-xs));
+    inset-inline-end: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: 12rem;
+    padding: var(--gap-xs);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--paper);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+
+    > .who {
+      margin: 0;
+      padding: var(--gap-sm);
+      border-block-end: 1px solid var(--rule);
+      margin-block-end: var(--gap-xs);
+      color: var(--ink);
+      overflow-wrap: anywhere;
+
+      small {
+        color: var(--ink-soft);
+      }
+    }
+
+    > form {
+      margin: 0;
+    }
+
+    /* The links and the sign-out button look alike: they are all just places
+       this menu goes. The button keeps its own semantics — it is a POST. */
+    > a,
+    > form > button {
+      display: block;
+      width: 100%;
+      padding: var(--gap-sm);
+      border: 0;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 400;
+      text-align: start;
+      text-decoration: none;
+      cursor: pointer;
+
+      &:hover,
+      &:focus-visible {
+        background: var(--paper-sunk);
+        text-decoration: none;
+      }
+    }
+  }
+}
+
+main {
+  flex: 1;
+  padding-block: var(--gap-lg) var(--gap-xl);
+}
+
+.site-footer {
+  border-block-start: 1px solid var(--rule);
+  background: var(--paper-sunk);
+  color: var(--ink-soft);
+  font-size: var(--text-small);
+  padding-block: var(--gap-lg);
+
+  a {
+    color: inherit;
+  }
+
+  .columns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-lg);
+    justify-content: space-between;
+  }
+
+  nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+  }
+}
+
+/* One container class does the width and the gutters everywhere, so sections line
+   up down the page without each one restating the measurement. */
+.inner {
+  width: 100%;
+  max-width: var(--page);
+  margin-inline: auto;
+  padding-inline: var(--gap-md);
+}
+
+/* --- Type ---------------------------------------------------------------- */
+
+h1 {
+  font-size: var(--title-page);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-block: 0 var(--gap-md);
+  text-wrap: balance;
+}
+
+h2 {
+  font-size: var(--title);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin-block: var(--gap-lg) var(--gap);
+  text-wrap: balance;
+}
+
+h3 {
+  font-size: var(--text-large);
+  margin-block: var(--gap-md) var(--gap-sm);
+}
+
+p {
+  margin-block: 0 var(--gap);
+  max-width: var(--measure);
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+small {
+  font-size: var(--text-small);
+  color: var(--ink-soft);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+/* The raw gateway notification on an order page: a long unbroken query string that
+   has to wrap somewhere. This lived as an inline style attribute until there was a
+   stylesheet to put it in — which is what let style-src drop 'unsafe-inline'. */
+pre.raw {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--paper-sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: var(--gap);
+  margin-block: 0 var(--gap);
+}
+
+/* --- Search and filtering ------------------------------------------------ */
+
+/* The filter form sits outside the swapped results, so it keeps its text and its
+   cursor while the grid under it changes. */
+.filters {
+  margin-block-end: var(--gap-md);
+}
+
+.filters .search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+  align-items: center;
+}
+
+.filters .search label {
+  flex: 1 1 14rem;
+}
+
+.filters input[type="search"] {
+  width: 100%;
+}
+
+/* Wrapping rather than scrolling: a shop with a dozen categories should show them
+   all, and a horizontal scroller hides the ones at the end. */
+.filters .categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm) var(--gap);
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: var(--gap-sm) var(--gap);
+  margin-block-start: var(--gap-sm);
+}
+
+.filters .categories legend {
+  font-size: var(--text-small);
+  color: var(--ink-soft);
+  padding-inline: var(--gap-xs);
+}
+
+.filters .categories label {
+  display: inline-flex;
+  gap: var(--gap-xs);
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* --- Pagination ---------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-xs);
+  align-items: center;
+  margin-block-start: var(--gap-lg);
+}
+
+.pager a,
+.pager .current {
+  display: inline-block;
+  min-width: 2.25rem;
+  padding: var(--gap-xs) var(--gap-sm);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  text-align: center;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager .current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.count {
+  font-size: var(--text-small);
+  margin-block-start: var(--gap-sm);
+}
+
+.see-all {
+  margin-block-start: var(--gap-md);
+}
+
+/* --- Error pages --------------------------------------------------------- */
+
+/* Narrow and centred, because there is nothing else on the page to align to. */
+.not-found,
+.error-page {
+  max-width: 34rem;
+  margin-inline: auto;
+  padding-block: var(--gap-xl);
+  text-align: center;
+}
+
+/* Big, faint, and hidden from screen readers — it is decoration, and the heading
+   under it is what actually says what happened. */
+.error-page .code,
+.not-found .code {
+  font-size: 4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--rule);
+  margin: 0;
+}
+
+.error-page .lede,
+.not-found .lede {
+  margin-inline: auto;
+}
+
+.not-found .filters {
+  margin-block: var(--gap-md);
+}
+
+.not-found .search {
+  justify-content: center;
+}
+
+.error-page .reference {
+  margin-block-start: var(--gap-lg);
+}
+
+/* Development-only detail. Deliberately loud and left-aligned: it is a wall of Go
+   error text, and making it look like part of the page would invite somebody to
+   ship a deployment still showing it. Never rendered when BASE_URL is https. */
+.error-page .detail {
+  margin-block-start: var(--gap-lg);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: var(--gap);
+  text-align: start;
+
+  > p {
+    margin-block-end: var(--gap-sm);
+    color: var(--warn);
+    font-size: var(--text-small);
+  }
+
+  > pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--paper-sunk);
+    border-radius: var(--radius);
+    padding: var(--gap-sm);
+    margin: 0;
+  }
+}
+
+/* The index page's opening line. Slightly larger than body text and nothing else,
+   because the line itself is meant to be replaced and a shop's own words should
+   not have to fight a style that assumed what they would be. */
+.lede {
+  font-size: var(--text-large);
+  max-width: 46ch;
+}
+
+/* Visible to a screen reader, not on screen. Used for labels whose purpose is
+   obvious from a placeholder but which still have to exist. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- Product cards ------------------------------------------------------- */
+
+/* auto-fill with a clamped minimum rather than breakpoints. The clamp is what makes
+   a phone show two cards across instead of one enormous one: the minimum column is
+   30% of the viewport, floored at 9rem and capped at 15rem, so the grid lands on two
+   columns at 430px and four at 1280px — and this file still knows nothing about
+   device widths. */
+.products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(9rem, 30vw, 15rem), 1fr));
+  gap: var(--gap-lg) var(--gap-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  color: inherit;
+  text-decoration: none;
+
+  /* The image sits in a fixed-ratio well, so a catalog of photographs at different
+     sizes still lines up — and a product with only the placeholder keeps the same
+     shape as one with a real picture. */
+  .frame {
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--paper-sunk);
+
+    > img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 200ms ease-out;
+    }
+  }
+
+  .title {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  .price {
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* No border, no shadow: the cards are stacked blocks of information rather than
+     boxes, and the only hover affordance is the image easing forward. */
+  &:hover .frame > img {
+    transform: scale(1.03);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: var(--radius);
+  }
+}
+
+.badge {
+  align-self: start;
+  font-size: var(--text-small);
+  padding: 0.1rem var(--gap-sm);
+  border-radius: 999px;
+  background: var(--paper-sunk);
+  color: var(--ink-soft);
+
+  &.sold-out,
+  &.problem {
+    color: var(--warn);
+    background: color-mix(in oklab, var(--warn) 8%, var(--paper-sunk));
+  }
+
+  /* The state worth noticing on a list of orders: this one took money. */
+  &.done {
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 8%, var(--paper-sunk));
+  }
+}
+
+/* --- Product detail ------------------------------------------------------ */
+
+.product-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--gap-lg);
+  align-items: start;
+
+  .frame {
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--paper-sunk);
+
+    > img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+  }
+
+  h1 {
+    margin-block-start: 0;
+  }
+}
+
+.price-lead {
+  font-size: var(--text-large);
+  font-variant-numeric: tabular-nums;
+  margin-block: 0 var(--gap);
+}
+
+/* The product page is the detail fragment plus a buying form. The fragment is a
+   two-column grid of its own so that an embedder fetching it gets something
+   laid out — but on this page those two columns and the form have to share one
+   grid, or the form ends up beneath the photograph while the prices sit across
+   the page.
+
+   display:contents dissolves the fragment's wrapper so its children join this
+   grid directly. That needs explicit columns to place the form into the second
+   one, hence the single width query — the only one in this file. Below it
+   everything is one column and the fragment keeps its own layout. */
+.product-page {
+  display: grid;
+  gap: var(--gap-lg);
+  align-items: start;
+}
+
+@media (width >= 52rem) {
+  .product-page {
+    grid-template-columns: 1fr 1fr;
+
+    > .product-detail {
+      display: contents;
+
+      /* The photograph spans both rows, so the form sits directly beneath the
+         prices rather than below the whole image. */
+      > .frame {
+        grid-area: 1 / 1 / span 2 / span 1;
+      }
+
+      > .info {
+        grid-area: 1 / 2;
+      }
+    }
+
+    > .buy {
+      grid-area: 2 / 2;
+    }
+  }
+}
+
+/* --- Forms and buttons --------------------------------------------------- */
+
+label {
+  display: block;
+  font-size: var(--text-small);
+  color: var(--ink-soft);
+  margin-block-end: var(--gap-xs);
+
+  /* An inline label — a checkbox, or one of the admin's compact variant rows —
+     should not become a block and push its control onto the next line. */
+  &:has(> input[type="checkbox"]),
+  &.inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+  }
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.6rem;
+  max-width: 100%;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+  }
+}
+
+input[type="checkbox"] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+textarea {
+  width: min(40rem, 100%);
+  resize: vertical;
+}
+
+button,
+.button {
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  display: inline-block;
+
+  &:hover {
+    /* Derived from the accent rather than a second hardcoded colour, so changing
+       one variable changes the hover too. */
+    background: color-mix(in oklab, var(--accent) 85%, black);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  /* The secondary treatment, for the destructive and the incidental: remove a line,
+     delete a variant, sign out. */
+  &.quiet {
+    background: transparent;
+    color: var(--ink-soft);
+    border-color: var(--rule);
+
+    &:hover {
+      background: var(--paper-sunk);
+      color: var(--ink);
+    }
+  }
+}
+
+/* One field, one row: the label above its control, the control filling the
+   column. A stack of these lines up on a single left edge without a table and
+   without every page restating a width. */
+.field {
+  margin-block-end: var(--gap);
+  max-width: 34rem;
+
+  > label {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  > :where(input, select, textarea) {
+    width: 100%;
+  }
+
+  /* For the ones whose content has a known size — a position, a quantity. A
+     five-character box asking for a number reads as a number. The width goes on
+     the control, not the block, so the hint under it still gets a line to
+     itself. */
+  &.narrow > :where(input, select) {
+    max-width: 12rem;
+  }
+}
+
+/* The explanatory line under a field or a heading. Says what the input means
+   when the label alone cannot. */
+.hint {
+  display: block;
+  font-size: var(--text-small);
+  color: var(--ink-soft);
+  margin-block: var(--gap-xs) 0;
+  max-width: var(--measure);
+
+  /* A hint that introduces what follows — a group of tick boxes, another field —
+     needs the gap under it that a trailing one does not. */
+  &:not(:last-child) {
+    margin-block-end: var(--gap-sm);
+  }
+}
+
+/* A named group of fields, or one of the sections below a form. The admin's
+   long pages are several of these rather than one undivided run of inputs, so
+   what belongs together looks like it does. */
+.panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: var(--gap-md);
+  margin-block-end: var(--gap-md);
+  min-inline-size: 0;   /* a fieldset will not shrink below its content without this */
+
+  > legend {
+    font-weight: 600;
+    padding-inline: var(--gap-xs);
+  }
+
+  > :where(h2, h3):first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+}
+
+/* Fields that belong on one line: a variant's SKU, options, price and stock.
+   Each control keeps the width its `size` attribute asks for and the row wraps
+   rather than overflowing; aligning on the end edge puts the inputs on a shared
+   baseline whether or not a field has a label above it. */
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm) var(--gap);
+  align-items: end;
+
+  > .field {
+    margin-block-end: 0;
+    max-width: none;
+
+    > :where(input, select) {
+      width: auto;
+    }
+  }
+}
+
+/* A set of tick boxes read as a list rather than a column of blocks:
+   categories on a product, variants on a file. */
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm) var(--gap-md);
+}
+
+/* The buttons at the end of a form, and the quiet link beside them. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+  align-items: center;
+  margin-block-start: var(--gap-md);
+}
+
+/* The top of a list page: its title and the one action that makes a new thing,
+   which belongs beside the title rather than orphaned on a line under it. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-end: var(--gap-md);
+
+  > h1 {
+    margin-block-end: 0;
+  }
+}
+
+/* A table of key and value rather than of columns — the payment facts on an
+   order. The keys are labels, not data, so they get a fixed column and the
+   values line up down the page. */
+.facts {
+  max-width: 44rem;
+
+  th {
+    inline-size: 13rem;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+
+  /* One fact per row, so a number belongs beside its label rather than pushed to
+     an edge the eye has to travel to. It keeps the tabular figures. */
+  td.num {
+    text-align: start;
+  }
+}
+
+.error {
+  color: var(--warn);
+  font-size: var(--text-small);
+  margin-block: var(--gap-xs) 0;
+}
+
+/* The facts about one administrator: a definition list rather than a table,
+   because it is one record and not a set of them. Two columns while there is
+   room for them, stacked when there is not. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--gap-xs) var(--gap);
+  margin: 0;
+
+  > dt {
+    color: var(--ink-soft);
+  }
+
+  > dd {
+    margin: 0;
+    /* An address has no spaces to break at, and the grid must not widen past
+       the screen because of one. */
+    overflow-wrap: anywhere;
+  }
+
+  @media (width < 30rem) {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+
+    > dt {
+      margin-block-start: var(--gap-sm);
+    }
+  }
+}
+
+.notice {
+  border: 1px solid var(--rule);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--paper-sunk);
+  padding: var(--gap-sm) var(--gap);
+  margin-block-end: var(--gap);
+
+  /* A notice that runs to several paragraphs — the oversold explanation on an
+     order — should not carry a paragraph gap inside its own padding. */
+  > :last-child {
+    margin-block-end: 0;
+  }
+
+  &.problem {
+    border-inline-start-color: var(--warn);
+  }
+}
+
+/* --- Tables: the cart, the admin lists ----------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block-end: var(--gap-md);
+
+  /* Wide tables scroll inside themselves rather than pushing the page sideways. */
+  :where(th, td) {
+    text-align: start;
+    padding: var(--gap-sm);
+    border-block-end: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-size: var(--text-small);
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+  tfoot :where(th, td) {
+    border-block-end: none;
+    font-weight: 600;
+  }
+
+  .num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.scroll-x {
+  overflow-x: auto;
+}
+
+/* --- Utility ------------------------------------------------------------- */
+
+.stack > * + * {
+  margin-block-start: var(--gap);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+  align-items: center;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.back {
+  display: inline-block;
+  font-size: var(--text-small);
+  margin-block-end: var(--gap);
+}
+
+img {
+  max-width: 100%;
+}
+
+/* --- the QR hand-over ----------------------------------------------------- */
+
+/* One page serves two devices. On a phone the link is the payment — it opens the
+   payment app directly — and the QR code is useless, since a phone cannot scan its
+   own screen. On a desktop the opposite holds: the code is the payment and the
+   link is a curiosity.
+
+   Neither is hidden, because "phone" and "desktop" are guesses and a wrong guess
+   here removes the only way to pay. Both are always present and the order changes,
+   which is also why this is a width query rather than a user-agent test on the
+   server: the page is cacheable and the layout follows the screen it is actually
+   on. */
+.qr-handover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-lg);
+  margin-block: var(--gap-lg);
+}
+
+.qr-handover-button {
+  order: 1;
+  font-size: 1.125rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.qr-handover-code {
+  order: 2;
+  margin: 0;
+
+  /* The image carries no width or height attributes — SnapScan's documentation is
+     explicit that setting them distorts the code past scanning — so the size is
+     set here, and it is a size a phone camera can actually resolve from across a
+     desk. */
+  > img {
+    display: block;
+    width: 260px;
+    height: auto;
+    /* A QR code has to keep its quiet zone and its contrast to scan at all, so it
+       gets a white plate rather than inheriting a dark theme's background. */
+    background: #fff;
+    padding: var(--gap-sm);
+    border-radius: var(--radius);
+  }
+
+  > figcaption {
+    margin-block-start: var(--gap-sm);
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+}
+
+/* Wide enough to be a screen somebody is sitting in front of: lead with the code,
+   because the phone that pays is not the thing showing this page. */
+@media (width >= 52rem) {
+  .qr-handover-code {
+    order: 1;
+  }
+
+  .qr-handover-button {
+    order: 2;
+  }
+}
+
+/* --- htmx ---------------------------------------------------------------- */
+
+/* htmx would inject these three rules itself, in a <style> block it writes into
+   the head as soon as it loads — which style-src 'self' blocks. The failure is
+   silent apart from a console warning, and it fails *open*: the rule that hides an
+   indicator never applies, so a spinner sits there permanently visible.
+
+   So the injection is turned off — `{"includeIndicatorStyles":false}` in the
+   htmx-config meta tag in layout.html — and the rules live here instead, where a
+   theme can also restyle them. The two go together: keep both, or drop both.
+
+   Verbatim from htmx 2.0.10 apart from the formatting. */
+.htmx-indicator {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 200ms ease-in;
+}
+
+/* Motion is decoration. Anyone who has asked their system to stop it gets a page
+   that does not move. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

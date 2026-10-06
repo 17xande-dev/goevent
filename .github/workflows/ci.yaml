@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: goevent
+          POSTGRES_PASSWORD: goevent
+          POSTGRES_DB: goevent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U goevent -d goevent"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgres://goevent:goevent@localhost:5432/goevent?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # The generated stores must match the SQL they came from. A query edited
+      # without regenerating would otherwise reach main as code that compiles and
+      # runs the old statement.
+      - run: make sqlc-install
+      - run: make sqlc-check
+
+      - run: go vet ./...
+      - run: go build ./...
+      # Database-backed tests apply migrations to fresh schemas and exercise real SQL.
+      - run: go test -race ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t goevent:ci .

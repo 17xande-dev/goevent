@@ -1,0 +1,9 @@
+{{/*
+  csrf renders the hidden field nosurf checks. Every form that changes anything
+  needs it; a form without one gets a 403, which is the intended failure but an
+  annoying one to debug, so it is a named template rather than copied markup.
+*/}}
+{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
+
+{{/* err renders the message for one field, if the form recorded one. */}}
+{{define "err"}}{{with .}}<p class="error">{{.}}</p>{{end}}{{end}}

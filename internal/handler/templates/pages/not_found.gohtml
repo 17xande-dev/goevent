@@ -1,0 +1,19 @@
+{{/*
+  The 404 page. It is the one page a visitor reaches by accident, so it does the
+  two things that actually help: it says plainly what happened, and it offers a way
+  onward rather than a dead end.
+*/}}
+{{define "content"}}
+
+<div class="not-found">
+  <p class="code" aria-hidden="true">404</p>
+  <h1>Page not found</h1>
+  <p class="lede muted">The address you asked for does not exist here. It may have
+  been moved, or the event may no longer be open.</p>
+
+  <p class="see-all">
+    <a href="/events" hx-boost="true">See upcoming events</a>
+  </p>
+</div>
+
+{{end}}
