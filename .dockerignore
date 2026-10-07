@@ -4,3 +4,5 @@
 theme
 deploy/**/.env
 **/backups
+go.work
+go.work.sum
