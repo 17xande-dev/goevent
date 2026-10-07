@@ -7,8 +7,8 @@
 # rather than as a `go tool` directive so that go.mod keeps stating the
 # dependencies of the *binary* — see "Dependencies" in docs/development.md.
 #
-# Regenerate with `make sqlc`; CI runs `sqlc diff` and fails if the checked-in
-# code is stale.
+# Regenerate with `make sqlc`; `make sqlc-check` runs `sqlc diff` and fails if the
+# checked-in code is stale.
 version: "2"
 sql:
   - engine: postgresql

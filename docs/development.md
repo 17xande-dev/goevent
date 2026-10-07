@@ -59,7 +59,7 @@ server through a tunnel and set `PAYFAST_NOTIFY_URL` to the tunnel's address plu
 | `make migrate-status` | Show which migrations have been applied |
 | `make check-config` | Validate the full configuration without starting anything |
 | `make sqlc` | Regenerate `internal/db/gen` from the queries and migrations |
-| `make sqlc-check` | Fail if the checked-in generated code is stale (what CI runs) |
+| `make sqlc-check` | Fail if the checked-in generated code is stale |
 | `make sqlc-install` | Install the pinned sqlc (`SQLC_VERSION`) |
 | `make hashpw` | Read a password from the terminal and print an argon2id hash (lockout recovery; see [Admin](admin.md#locked-out)) |
 | `make image` | Build the production image locally, tagged `TAG` |
@@ -71,8 +71,12 @@ The gate before a commit:
 gofmt -l . ; go vet ./... && make sqlc-check && make test
 ```
 
-CI runs `make sqlc-check`, `go vet`, `go build` and `go test -race ./...` against a
-Postgres service, and builds the Docker image.
+There is no hosted CI for now. Before a commit, run the gate yourself, with `make up`
+providing Postgres:
+
+```sh
+gofmt -l . ; go vet ./... && make sqlc-check && make test
+```
 
 ## Tests
 
@@ -121,7 +125,7 @@ internal/{auth,events,registrations,outbox}
 ```
 
 **Add or change a query:** edit the `.sql` file, run `make sqlc`, then use the new method.
-CI fails if the generated code is stale.
+`make sqlc-check` fails if the generated code is stale.
 
 Transactions are orchestrated in Go, not in SQL: `registrations.CheckoutWith`,
 `registrations.MarkPaid` and `registrations.RecordPayment` lock, check, write and queue
@@ -201,4 +205,5 @@ Everything else is the standard library. htmx is vendored into
 sqlc is pinned in the Makefile (`SQLC_VERSION`), not as a `go tool` directive in `go.mod`.
 `go tool` would put about forty indirect modules that never reach the binary into the file
 that is meant to state the binary's dependencies. `make sqlc-install` installs the pinned
-version; CI runs it before anything else.
+version into `$GOPATH/bin`; `make sqlc` and `make sqlc-check` run whichever `sqlc` is on
+your `PATH`, so keep that one at the pinned version.

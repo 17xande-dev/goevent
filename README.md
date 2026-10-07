@@ -65,7 +65,7 @@ make run
 ```sh
 make test          # every test, including the database-backed ones (needs make up or make run's postgres)
 make sqlc          # regenerate internal/db/gen after editing internal/db/queries or migrations
-make sqlc-check    # what CI runs: fail if the generated code is stale
+make sqlc-check    # fail if the generated code is stale
 ```
 
 The gate before a commit:

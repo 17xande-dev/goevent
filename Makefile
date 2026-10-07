@@ -138,9 +138,10 @@ sqlc:
 	$(SQLC) generate
 
 ## sqlc-check: fail if the checked-in generated code is stale
-# What CI runs. `sqlc diff` compares what would be generated against what is on
-# disk, so a query edited without regenerating is caught on the PR rather than by
-# a reviewer noticing the SQL and the Go disagree.
+# Part of the gate before a commit. `sqlc diff` compares what would be generated
+# against what is on disk, so a query edited without regenerating is caught
+# before it is committed rather than by a reviewer noticing the SQL and the Go
+# disagree.
 sqlc-check:
 	$(SQLC) diff
 
