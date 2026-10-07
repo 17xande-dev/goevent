@@ -21,10 +21,10 @@ import (
 // # Both formats verify
 //
 // CheckPassword accepts a bcrypt hash as well as an argon2id one, dispatching on
-// the prefix. That is not indecision: it means an existing deployment's
-// ADMIN_PASSWORD_HASH keeps working across this change, and an operator moves to
-// argon2id when they next run `make hashpw` rather than on a flag day. New hashes
-// are only ever argon2id.
+// the prefix. That is not indecision: a hash carried over from an older system, or
+// set by hand during lockout recovery, keeps working, and moves to argon2id when
+// the password is next changed rather than on a flag day. New hashes are only
+// ever argon2id.
 
 // Params are argon2id's cost parameters.
 //
@@ -62,15 +62,14 @@ var DefaultParams = Params{
 }
 
 // maxVerifyMemory caps the memory a *stored* hash may ask for at verification
-// time. Without it a mistyped ADMIN_PASSWORD_HASH claiming m=4194304 would try to
+// time. Without it a mistyped stored hash claiming m=4194304 would try to
 // allocate four gibibytes on the first login attempt and take the server with it.
 const maxVerifyMemory = 1 << 20 // 1 GiB in KiB
 
 // ErrPasswordFormat means a stored hash is not in a format this package can read.
 var ErrPasswordFormat = errors.New("auth: unrecognised password hash format")
 
-// HashPassword returns an argon2id PHC string for storing in
-// ADMIN_PASSWORD_HASH.
+// HashPassword returns an argon2id PHC string for an admin_users row.
 func HashPassword(password string, p Params) (string, error) {
 	if password == "" {
 		return "", errors.New("auth: password must not be empty")
@@ -126,8 +125,8 @@ func CheckPassword(hash, password string) bool {
 }
 
 // ParsePasswordHash checks that a stored hash is one this package can verify, so
-// a mistyped ADMIN_PASSWORD_HASH is a boot failure rather than an admin who can
-// never sign in and no explanation of why.
+// a mistyped hash is refused when it is set, rather than leaving an admin who
+// can never sign in and no explanation of why.
 func ParsePasswordHash(hash string) error {
 	switch {
 	case strings.HasPrefix(hash, "$argon2id$"):

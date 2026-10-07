@@ -672,10 +672,10 @@ func Load() (Config, error) {
 				"must all be set to send through Graph")
 	}
 
-	// Mail is REQUIRED. A ticket reaches its attendee as a QR code in the
-	// confirmation email, and only the ticket secret's hash is stored — so a
-	// deployment with no mail server does not merely drop a receipt, it takes money
-	// for tickets nobody can then present at the door. Graph satisfies it just as
+	// Mail is REQUIRED. The confirmation email is the only place a registrant is
+	// given their tickets and the link to their registration — so a deployment
+	// with no mail server does not merely drop a receipt, it takes money for
+	// tickets nobody can then present at the door. Graph satisfies it just as
 	// SMTP does.
 	if !c.SMTP.Configured() && !c.Graph.Configured() {
 		return Config{}, fmt.Errorf(

@@ -6,7 +6,7 @@
 // internal/payment/snapscan, and a site may enable either or both. The split
 // exists so that adding a third is a documented extension point rather than a
 // fork, and so the handler tests never talk to a payment provider — see fake.go
-// and CONTRIBUTING.md.
+// and docs/payments.md.
 //
 // # What the second gateway changed
 //

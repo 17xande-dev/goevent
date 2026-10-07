@@ -9,10 +9,12 @@ Server-rendered `html/template` with a little htmx, PostgreSQL, and
 [PayFast](https://payfast.io) and [SnapScan](https://www.snapscan.co.za) for
 payment. Stdlib-first, with a deliberately small dependency surface.
 
-> **Status: early.** The foundation works: configuration, migrations, the container
-> stack, administrator accounts with roles, the security baseline (CSP, CSRF, rate
-> limits) and the payment gateway code. Events, registration, checkout, tickets
-> and check-in are being built in that order.
+> **Status: early.** Every part of a first event is built: events with ticket types
+> and questions; registering free, paying online (PayFast, SnapScan) or paying later
+> by EFT or cash; QR tickets by email; recording payments, cancelling and exporting
+> in the admin; and checking people in at the door with a USB or Bluetooth scanner
+> or by name. It has not yet run a real event, and the PayFast sandbox round trip
+> has not been tested end to end.
 >
 > There is no default admin password. On first start the server logs a one-time
 > setup token, and `/admin/setup` exchanges it for the first administrator account.
@@ -51,6 +53,13 @@ To run the Go server on your host instead, against the compose Postgres and mail
 make run
 ```
 
+## Documentation
+
+[Configuration](docs/configuration.md) · [Deploying](docs/deploy/README.md) ·
+[Payments](docs/payments.md) · [Email](docs/email.md) · [Check-in](docs/checkin.md) ·
+[Security](docs/security.md) · [Operations](docs/operations.md) ·
+[Theming](docs/theming.md) · [Development](docs/development.md)
+
 ## Development
 
 ```sh
@@ -75,12 +84,15 @@ gofmt -l . ; go vet ./... && make sqlc-check && make test
 | No gateway configured | Allowed: free and manually-settled events only | — |
 | Capacity | A pending registration holds its seats for 15 minutes; a payment arriving after the hold lapsed is never refused, but flagged *oversold* | — |
 | Refunds | In the gateway's own dashboard | A gateway with a refund API worth wiring up |
+| Pay later | An event option: EFT or cash, seats held until registration closes, an admin records the money | — |
+| Manage links and tickets | HMACs of the row id under keys derived from `SECRET_KEY`, so an email can be regenerated and a code checked without a lookup; revoked only by status, or by rotating the key | Needing to revoke one ticket's code without cancelling it |
+| QR codes | `rsc.io/qr`; inline (CID) images in the email, inline SVG on the registration page | — |
+| Check-in | A page per event in the admin, for keyboard-style scanners and name search | The separate check-in app below |
 
 ### Decisions still open
 
 | Decision | Candidates | Trigger |
 |---|---|---|
-| QR code generation | `rsc.io/qr`, `skip2/go-qrcode` | Tickets (next phases) |
 | Multi-date events | An `event_times` table | The first recurring or multi-session event |
 | Check-in app | A separate app reading goevent through an API | Kids' check-in: rooms, security labels, check-out |
 | More gateways | Yoco, Ozow, Paystack, Peach | Demand from an adopter |
