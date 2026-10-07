@@ -15,10 +15,10 @@ import (
 	"time"
 )
 
-// Bundled assets: htmx, the payment redirect script, and the store's own images —
-// a logo and a placeholder for products without a photograph.
+// Bundled assets: htmx, the payment redirect script, and the site's own images —
+// a logo and a placeholder for events without an image.
 //
-// These are *not* product images. A product image is uploaded, keyed, and deleted
+// These are *not* event images. An event image is uploaded, keyed, and deleted
 // by the application; these ship with the binary and are replaced by an operator.
 // Keeping the two apart means a cleanup sweep over uploaded objects can never
 // consider a logo an orphan.
@@ -40,7 +40,7 @@ var staticFS embed.FS
 // contentTypes maps an extension to what the file is served as.
 //
 // An explicit map rather than mime.TypeByExtension: this is a public route, and the
-// set of things a store needs to serve is small and worth stating. An extension not
+// set of things a site needs to serve is small and worth stating. An extension not
 // listed here is not served at all, so dropping a .php or a .html into STATIC_DIR
 // cannot publish it.
 var contentTypes = map[string]string{
@@ -153,7 +153,7 @@ func loadAssets() (map[string]staticAsset, error) {
 }
 
 // newAsset prepares one file for serving, or reports that its extension is not one
-// this store serves.
+// this server serves.
 func newAsset(name string, body []byte) (staticAsset, bool) {
 	contentType, ok := contentTypes[filepath.Ext(name)]
 	if !ok {

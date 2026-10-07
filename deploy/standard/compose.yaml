@@ -1,4 +1,4 @@
-# goevent behind Caddy, with images and purchased files in R2 and mail over SMTP.
+# goevent behind Caddy, with event images in R2 and mail over SMTP.
 #
 # Copy this directory to the server, then:
 #

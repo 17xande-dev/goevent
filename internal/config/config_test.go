@@ -25,7 +25,7 @@ func setRequired(t *testing.T) {
 	// backends and needs nothing running, which is why it is the one used here.
 	t.Setenv("IMAGE_DIR", t.TempDir())
 	t.Setenv("SMTP_HOST", "localhost")
-	t.Setenv("EMAIL_FROM", "orders@example.com")
+	t.Setenv("EMAIL_FROM", "events@example.com")
 }
 
 // A deployment with no payment gateway is valid: free events, and cash or EFT
@@ -110,14 +110,14 @@ func TestLoad_RejectsMalformedEmailQueueKey(t *testing.T) {
 
 func TestLoad_TrimsTrailingSlashFromBaseURL(t *testing.T) {
 	setRequired(t)
-	t.Setenv("BASE_URL", "https://store.example.com/")
+	t.Setenv("BASE_URL", "https://events.example.com/")
 
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.BaseURL != "https://store.example.com" {
-		t.Errorf("BaseURL = %q, want https://store.example.com", c.BaseURL)
+	if c.BaseURL != "https://events.example.com" {
+		t.Errorf("BaseURL = %q, want https://events.example.com", c.BaseURL)
 	}
 	// HTTPS deployments always want Secure cookies, so this is derived rather
 	// than being one more thing to forget.
@@ -164,7 +164,7 @@ func TestLoad_SetupToken(t *testing.T) {
 func TestLoad_EmbedOrigins(t *testing.T) {
 	setRequired(t)
 
-	// Unset means no embedding, which is the right default for a store only ever
+	// Unset means no embedding, which is the right default for a site only ever
 	// browsed on its own domain.
 	c, err := Load()
 	if err != nil {
@@ -344,8 +344,7 @@ func TestLoad_PayFast(t *testing.T) {
 func TestLoad_Blob(t *testing.T) {
 	setRequired(t)
 
-	// Unconfigured is a complete, working store that pastes image URLs — the same
-	// way the catalog worked for five phases.
+	// Unconfigured is a complete, working site: object storage is optional.
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -483,7 +482,7 @@ func TestLoad_TrustProxyIPIsRefused(t *testing.T) {
 	setRequired(t)
 
 	// The variable it replaced must not be ignored: a deployment that still sets
-	// it would fall back to remote, so every shopper would share one rate-limit
+	// it would fall back to remote, so every registrant would share one rate-limit
 	// bucket and the payment callback would reject every genuine notification.
 	// Both fail quietly, so the boot does not.
 	for _, v := range []string{"true", "false"} {
@@ -683,11 +682,7 @@ func TestLoad_EverySecretKeyAcceptsAFile(t *testing.T) {
 			t.Setenv("BLOB_SECRET_ACCESS_KEY", "secret")
 			t.Setenv("BLOB_PUBLIC_BASE_URL", "http://localhost:9000/images")
 			t.Setenv("IMAGE_DIR", "")
-			t.Setenv("DOWNLOAD_ENDPOINT", "localhost:9000")
-			t.Setenv("DOWNLOAD_BUCKET", "downloads")
-			t.Setenv("DOWNLOAD_ACCESS_KEY_ID", "id")
-			t.Setenv("DOWNLOAD_SECRET_ACCESS_KEY", "secret")
-			t.Setenv("SMTP_USERNAME", "orders@example.com")
+			t.Setenv("SMTP_USERNAME", "events@example.com")
 
 			marker := "via-file-7f3a9c"
 			if key == "SECRET_KEY" {
@@ -765,7 +760,7 @@ func TestLoadTool_RejectsBadLogLevel(t *testing.T) {
 }
 
 func TestLoad_RefusesRealPaymentsWithDemoCredentials(t *testing.T) {
-	// The mistake this catches is the second half of a two-step one: a store is
+	// The mistake this catches is the second half of a two-step one: a site is
 	// found to have been quietly running against the sandbox, somebody sets
 	// PAYFAST_SANDBOX=false, and does not notice that the merchant id came from
 	// .env.example too. Every payment would then be signed with a key printed in
@@ -804,7 +799,7 @@ func TestLoad_RefusesRealPaymentsWithDemoCredentials(t *testing.T) {
 // exactly one part of it.
 func setOAuth(t *testing.T) {
 	t.Helper()
-	t.Setenv("SMTP_USERNAME", "orders@example.com")
+	t.Setenv("SMTP_USERNAME", "events@example.com")
 	t.Setenv("SMTP_OAUTH_TENANT_ID", "tenant-id")
 	t.Setenv("SMTP_OAUTH_CLIENT_ID", "client-id")
 	t.Setenv("SMTP_OAUTH_CLIENT_SECRET", "client-secret")
@@ -840,9 +835,9 @@ func TestLoad_SMTPOAuth(t *testing.T) {
 	}
 }
 
-// A half-configured registration is a boot failure. The alternative is a store
-// that starts, takes an order, and only then discovers it cannot authenticate —
-// with the buyer's download link in the message it failed to send.
+// A half-configured registration is a boot failure. The alternative is a server
+// that starts, takes a registration, and only then discovers it cannot
+// authenticate — with the registrant's tickets in the message it failed to send.
 func TestLoad_SMTPOAuthMustBeComplete(t *testing.T) {
 	for _, missing := range []string{
 		"SMTP_OAUTH_TENANT_ID", "SMTP_OAUTH_CLIENT_ID", "SMTP_OAUTH_CLIENT_SECRET",
@@ -901,7 +896,7 @@ func setGraph(t *testing.T) {
 	t.Setenv("GRAPH_TENANT_ID", "tenant-id")
 	t.Setenv("GRAPH_CLIENT_ID", "client-id")
 	t.Setenv("GRAPH_CLIENT_SECRET", "client-secret")
-	t.Setenv("EMAIL_FROM", "orders@example.com")
+	t.Setenv("EMAIL_FROM", "events@example.com")
 }
 
 // A Graph-only deployment sets no SMTP_HOST at all, and that has to satisfy the
@@ -927,8 +922,8 @@ func TestLoad_GraphOnlySatisfiesTheMailRequirement(t *testing.T) {
 	}
 }
 
-// Half-configured Graph is a boot failure. The alternative is a store that
-// starts, takes an order, and only then discovers it cannot send.
+// Half-configured Graph is a boot failure. The alternative is a server that
+// starts, takes a registration, and only then discovers it cannot send.
 func TestLoad_GraphMustBeComplete(t *testing.T) {
 	for _, missing := range []string{
 		"GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "EMAIL_FROM",

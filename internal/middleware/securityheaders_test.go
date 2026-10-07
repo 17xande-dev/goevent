@@ -13,7 +13,7 @@ func TestSecurityHeaders(t *testing.T) {
 	h := SecurityHeaders(Policy{})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 
 	csp := w.Header().Get("Content-Security-Policy")
 	for _, want := range []string{
@@ -63,7 +63,7 @@ func TestSecurityHeaders_HSTSWhenAsked(t *testing.T) {
 	h := SecurityHeaders(Policy{HSTS: true})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 
 	hsts := w.Header().Get("Strict-Transport-Security")
 	if !strings.Contains(hsts, "max-age=") || !strings.Contains(hsts, "includeSubDomains") {
@@ -77,7 +77,7 @@ func TestSecurityHeaders_HSTSWhenAsked(t *testing.T) {
 }
 
 func TestSecurityHeaders_ImagesComeFromHereOrTheBucketOnly(t *testing.T) {
-	// A product image is always bytes this store holds: an object in the bucket, or a
+	// An event image is always bytes this server holds: an object in the bucket, or a
 	// file served from this origin. Pasting a URL from the general internet used to be
 	// allowed and no longer is, which is what lets this directive be closed.
 	h := SecurityHeaders(Policy{
@@ -85,7 +85,7 @@ func TestSecurityHeaders_ImagesComeFromHereOrTheBucketOnly(t *testing.T) {
 	})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 
 	csp := w.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "img-src 'self' https://images.example;") {
@@ -99,10 +99,10 @@ func TestSecurityHeaders_ImagesComeFromHereOrTheBucketOnly(t *testing.T) {
 		}
 	}
 
-	// And with no bucket — a disk-backed store — it is 'self' and nothing else.
+	// And with no bucket — a disk-backed site — it is 'self' and nothing else.
 	h = SecurityHeaders(Policy{})(http.HandlerFunc(ok))
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self';") {
 		t.Errorf("img-src with no bucket = %s, want exactly 'self'", csp)
 	}
@@ -117,7 +117,7 @@ func TestSecurityHeaders_FontSourcesOpenStyleAndFontOnly(t *testing.T) {
 	})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 
 	csp := w.Header().Get("Content-Security-Policy")
 	for _, want := range []string{
@@ -130,7 +130,7 @@ func TestSecurityHeaders_FontSourcesOpenStyleAndFontOnly(t *testing.T) {
 	}
 
 	// The property that makes this a narrow widening: a font service still cannot
-	// run JavaScript on any page of this store, the checkout included. If this ever
+	// run JavaScript on any page of this site, the checkout included. If this ever
 	// fails, the font knob has grown into a general one.
 	if !strings.Contains(csp, "script-src 'self';") {
 		t.Errorf("font sources reached script-src: %s", csp)
@@ -148,14 +148,14 @@ func TestSecurityHeaders_FontSourcesOpenStyleAndFontOnly(t *testing.T) {
 }
 
 func TestSecurityHeaders_FrameAncestorsFollowEmbedOrigins(t *testing.T) {
-	// Embedding the catalog in someone else's page is the point of the feature,
-	// so the origins allowed to fetch it must also be allowed to frame it.
+	// Embedding the event pages in someone else's page is the point of the
+	// feature, so the embed origins must be allowed to frame them.
 	h := SecurityHeaders(Policy{
 		FrameAncestors: []string{"https://cms.example", "https://other.example"},
 	})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/products", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil))
 
 	csp := w.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "frame-ancestors https://cms.example https://other.example") {
@@ -164,15 +164,15 @@ func TestSecurityHeaders_FrameAncestorsFollowEmbedOrigins(t *testing.T) {
 }
 
 func TestSecurityHeaders_FormActionAllowsTheGateway(t *testing.T) {
-	// The checkout hands the shopper to the gateway with a real cross-origin form
+	// The checkout hands the registrant to the gateway with a real cross-origin form
 	// post. form-action 'self' alone makes the browser block it — silently, from
-	// the shopper's point of view — so the gateway's origin has to be named.
+	// the registrant's point of view — so the gateway's origin has to be named.
 	h := SecurityHeaders(Policy{
 		FormActions: []string{"https://sandbox.payfast.co.za"},
 	})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/cart/checkout", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events/spring-camp/register", nil))
 
 	csp := w.Header().Get("Content-Security-Policy")
 	if !strings.Contains(csp, "form-action 'self' https://sandbox.payfast.co.za") {
@@ -197,7 +197,7 @@ func TestCORS(t *testing.T) {
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/products", nil)
+		req := httptest.NewRequest(http.MethodGet, "/events", nil)
 		if tc.origin != "" {
 			req.Header.Set("Origin", tc.origin)
 		}
@@ -222,7 +222,7 @@ func TestCORS_NeverAllowsCredentials(t *testing.T) {
 		h := CORS(origins)(http.HandlerFunc(ok))
 
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/products", nil)
+		req := httptest.NewRequest(http.MethodGet, "/events", nil)
 		req.Header.Set("Origin", "https://cms.example")
 		h.ServeHTTP(w, req)
 
@@ -236,7 +236,7 @@ func TestCORS_Wildcard(t *testing.T) {
 	h := CORS([]string{"*"})(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/products", nil)
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
 	req.Header.Set("Origin", "https://anyone.example")
 	h.ServeHTTP(w, req)
 
@@ -249,7 +249,7 @@ func TestCORS_UnconfiguredSendsNothing(t *testing.T) {
 	h := CORS(nil)(http.HandlerFunc(ok))
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/products", nil)
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
 	req.Header.Set("Origin", "https://cms.example")
 	h.ServeHTTP(w, req)
 
@@ -265,7 +265,7 @@ func TestCORS_Preflight(t *testing.T) {
 	}))
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodOptions, "/products", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/events", nil)
 	req.Header.Set("Origin", "https://cms.example")
 	req.Header.Set("Access-Control-Request-Headers", "hx-request")
 	h.ServeHTTP(w, req)

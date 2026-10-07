@@ -84,7 +84,7 @@ func RequireAdmin(users *auth.Store, log *slog.Logger) Middleware {
 
 // AttachAdmin is RequireAdmin for a route that serves anybody: a live session's
 // account goes into the context, and a request without one carries on
-// anonymously, AdminUser reporting false. The storefront's account menu is the
+// anonymously, AdminUser reporting false. The public pages' account menu is the
 // case — it asks who is signed in, and "nobody" is an answer, not a refusal.
 //
 // A store error is still a 500, for RequireAdmin's reason.

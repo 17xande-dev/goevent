@@ -15,7 +15,7 @@ func TestDisk_PutGetURLAndDelete(t *testing.T) {
 		t.Fatalf("NewDisk: %v", err)
 	}
 
-	const key = "products/3f2504e0/9f86d081b1e2.jpg"
+	const key = "events/3f2504e0/9f86d081b1e2.jpg"
 	url, err := d.Put(t.Context(), key, bytes.NewReader(jpegBytes), int64(len(jpegBytes)), "image/jpeg")
 	if err != nil {
 		t.Fatalf("Put: %v", err)
@@ -72,12 +72,12 @@ func TestDisk_PutLeavesNoTemporaryFiles(t *testing.T) {
 		t.Fatalf("NewDisk: %v", err)
 	}
 
-	const key = "products/abc/def.png"
+	const key = "events/abc/def.png"
 	if _, err := d.Put(t.Context(), key, bytes.NewReader(pngBytes), int64(len(pngBytes)), "image/png"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
-	entries, err := os.ReadDir(filepath.Join(dir, "products", "abc"))
+	entries, err := os.ReadDir(filepath.Join(dir, "events", "abc"))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
@@ -86,15 +86,15 @@ func TestDisk_PutLeavesNoTemporaryFiles(t *testing.T) {
 		for i, e := range entries {
 			names[i] = e.Name()
 		}
-		t.Errorf("%d files in the product directory, want 1: %v", len(entries), names)
+		t.Errorf("%d files in the event directory, want 1: %v", len(entries), names)
 	}
 	if entries[0].Name() != "def.png" {
 		t.Errorf("the stored file is %q, want def.png", entries[0].Name())
 	}
 }
 
-func TestDisk_DeleteTidiesTheProductDirectory(t *testing.T) {
-	// A shop that replaces images for years should not accumulate thousands of empty
+func TestDisk_DeleteTidiesTheEventDirectory(t *testing.T) {
+	// A site that replaces images for years should not accumulate thousands of empty
 	// directories.
 	dir := t.TempDir()
 	d, err := NewDisk(dir)
@@ -102,30 +102,30 @@ func TestDisk_DeleteTidiesTheProductDirectory(t *testing.T) {
 		t.Fatalf("NewDisk: %v", err)
 	}
 
-	if _, err := d.Put(t.Context(), "products/one/a.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
+	if _, err := d.Put(t.Context(), "events/one/a.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if _, err := d.Put(t.Context(), "products/two/a.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
+	if _, err := d.Put(t.Context(), "events/two/a.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if _, err := d.Put(t.Context(), "products/two/b.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
+	if _, err := d.Put(t.Context(), "events/two/b.jpg", bytes.NewReader(jpegBytes), 0, "image/jpeg"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
 	// Emptying a directory removes it.
-	if err := d.Delete(t.Context(), "products/one/a.jpg"); err != nil {
+	if err := d.Delete(t.Context(), "events/one/a.jpg"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "products", "one")); !os.IsNotExist(err) {
-		t.Error("an emptied product directory was left behind")
+	if _, err := os.Stat(filepath.Join(dir, "events", "one")); !os.IsNotExist(err) {
+		t.Error("an emptied event directory was left behind")
 	}
 
 	// A directory with another image in it is left alone — the tidy-up is a no-op
 	// rather than a hazard.
-	if err := d.Delete(t.Context(), "products/two/a.jpg"); err != nil {
+	if err := d.Delete(t.Context(), "events/two/a.jpg"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "products", "two", "b.jpg")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "events", "two", "b.jpg")); err != nil {
 		t.Errorf("deleting one image took its sibling with it: %v", err)
 	}
 }
@@ -144,10 +144,10 @@ func TestDisk_RefusesKeysThatEscapeTheDirectory(t *testing.T) {
 	bad := []string{
 		"",
 		"../escaped.txt",
-		"products/../../escaped.txt",
+		"events/../../escaped.txt",
 		"/etc/passwd",
 		"/absolute.jpg",
-		"products/./../../escaped.txt",
+		"events/./../../escaped.txt",
 	}
 	for _, key := range bad {
 		if _, err := d.Put(t.Context(), key, strings.NewReader("x"), 1, "image/jpeg"); err == nil {
@@ -175,7 +175,7 @@ func TestNewDisk_ChecksTheDirectory(t *testing.T) {
 		t.Errorf("the directory was not created: %v", err)
 	}
 	// The path is absolute afterwards, so a later change of working directory cannot
-	// move the store's images.
+	// move the server's images.
 	if !filepath.IsAbs(d.Dir()) {
 		t.Errorf("Dir() = %q, want an absolute path", d.Dir())
 	}

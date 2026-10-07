@@ -1,7 +1,7 @@
 // Command hashpw turns a password into an argon2id hash.
 //
-// It is a recovery path and not part of setting the store up. The first
-// administrator claims the store at /admin/setup with the one-time token the server
+// It is a recovery path and not part of setting the site up. The first
+// administrator claims the site at /admin/setup with the one-time token the server
 // prints on its first boot, and no password hash goes into the environment any more.
 //
 // What is left for this command is the case nothing in the admin can repair: every

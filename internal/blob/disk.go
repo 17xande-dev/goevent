@@ -11,13 +11,13 @@ import (
 
 // ImagePrefix is the URL path the server serves disk-backed images from. It is a
 // relative URL, so it works whatever BASE_URL is and stays same-origin — which is
-// the point: an image the store serves itself needs no CSP allowance beyond 'self'.
+// the point: an image the server serves itself needs no CSP allowance beyond 'self'.
 const ImagePrefix = "/images/"
 
-// Disk stores images in a directory and serves them from the store's own origin.
+// Disk stores images in a directory and serves them from the server's own origin.
 //
-// It exists so that a shop needs no object storage at all: one binary, one
-// directory, working product photographs. That is the right shape for a single VM
+// It exists so that a deployment needs no object storage at all: one binary, one
+// directory, working event images. That is the right shape for a single VM
 // with a volume, which is a large share of the deployments this project is for.
 //
 // The trade, stated plainly because it is the thing that will bite: **two instances
@@ -64,7 +64,7 @@ func (d *Disk) Dir() string { return d.dir }
 //
 // The write is to a temporary file and then a rename, which is atomic on every
 // filesystem this will run on. A crash or a full disk halfway through therefore
-// leaves no partial file for the storefront to serve as a broken image — the
+// leaves no partial file for the event pages to serve as a broken image — the
 // object either exists complete or does not exist.
 func (d *Disk) Put(_ context.Context, key string, r io.Reader, _ int64, _ string) (string, error) {
 	full, err := d.resolve(key)
@@ -120,7 +120,7 @@ func (d *Disk) Delete(_ context.Context, key string) error {
 		return fmt.Errorf("blob: delete %s: %w", key, err)
 	}
 
-	// Take the product's directory with it when it empties, so a shop that replaces
+	// Take the event's directory with it when it empties, so a site that replaces
 	// images for years does not accumulate thousands of empty directories. A
 	// non-empty directory fails here, which is exactly the intended no-op.
 	os.Remove(filepath.Dir(full))

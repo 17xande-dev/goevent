@@ -42,7 +42,7 @@ func TestRegistry_LooksUpByName(t *testing.T) {
 }
 
 // Two gateways under one name would make /payments/{gateway}/callback ambiguous,
-// which is to say it would settle orders using a provider that never saw them.
+// which is to say it would settle registrations using a provider that never saw them.
 func TestNewRegistry_Refusals(t *testing.T) {
 	if _, err := NewRegistry(); err == nil {
 		t.Error("NewRegistry accepted no gateways at all")
@@ -77,7 +77,7 @@ func TestRegistry_CSPCollectsOnlyWhatIsAskedFor(t *testing.T) {
 		t.Errorf("img-src = %q", images)
 	}
 
-	// A store with only a form-post gateway must add nothing to img-src.
+	// A site with only a form-post gateway must add nothing to img-src.
 	only, err := NewRegistry(form)
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)

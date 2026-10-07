@@ -12,7 +12,7 @@ import (
 // request.
 //
 // Without one, an error page can only say "something went wrong" and a log line
-// can only say "something went wrong at 14:32" — and with two shoppers on the site
+// can only say "something went wrong at 14:32" — and with two registrants on the site
 // there is no way to tell which line belongs to which of them. The id is put in
 // every log line for the request, echoed in a response header, and printed on the
 // error page as a reference, so "I got an error, it said 7f3a9c2e" is enough to
@@ -30,7 +30,7 @@ const Header = "X-Request-Id"
 
 // cloudTraceHeader is set by Google Cloud Run on every request, formatted
 // "TRACE_ID/SPAN_ID;o=1". Adopting its trace id rather than minting our own means
-// the store's logs and the platform's own request logs name the same request, which
+// the server's logs and the platform's own request logs name the same request, which
 // is the difference between one search and two.
 const cloudTraceHeader = "X-Cloud-Trace-Context"
 
@@ -47,7 +47,7 @@ func RequestID(next http.Handler) http.Handler {
 			id = generate()
 		}
 
-		// Echoed so that a customer's devtools screenshot, or a curl -i, carries the
+		// Echoed so that a visitor's devtools screenshot, or a curl -i, carries the
 		// reference without anyone having to reach the error page for it.
 		w.Header().Set(Header, id)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey, id)))

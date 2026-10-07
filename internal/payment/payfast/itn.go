@@ -15,8 +15,8 @@ import (
 )
 
 // PayFast's ITN — Instant Transaction Notification — is a form-encoded POST to
-// notify_url, and it is the only statement about a payment this store trusts. The
-// shopper's browser returning to return_url proves nothing: anyone can navigate
+// notify_url, and it is the only statement about a payment this server trusts. The
+// registrant's browser returning to return_url proves nothing: anyone can navigate
 // there without paying.
 //
 // So ParseCallback's job is to prove the notification is genuine, and it applies
@@ -42,7 +42,7 @@ import (
 // enforced before the bytes are held rather than after.
 const MaxBodyBytes = 64 << 10
 
-// itnFields are the PayFast field names this store reads.
+// itnFields are the PayFast field names this server reads.
 const (
 	fieldSignature   = "signature"
 	fieldMerchantID  = "merchant_id"
@@ -54,7 +54,7 @@ const (
 
 // StatusComplete is the only payment_status that means the money is taken.
 // PayFast also sends FAILED, PENDING and CANCELLED, which are recorded but never
-// promote an order to paid.
+// promote a payment to paid.
 const StatusComplete = "COMPLETE"
 
 // ParseCallback authenticates one notification and normalises it.
@@ -119,7 +119,7 @@ func (g *Gateway) ParseCallback(ctx context.Context, n payment.Notification) (pa
 	}, nil
 }
 
-// outcome maps PayFast's payment_status onto the store's vocabulary. Anything
+// outcome maps PayFast's payment_status onto the server's vocabulary. Anything
 // unrecognised stays pending rather than being called a failure: a status this
 // code has not seen before is not evidence that a payment will not arrive.
 func outcome(status string) payment.Outcome {
@@ -210,7 +210,7 @@ func (g *Gateway) confirm(ctx context.Context, body []byte) error {
 	res, err := g.client.Do(req)
 	if err != nil {
 		// A network failure is not a rejection: the notification may well be
-		// genuine. It is still not confirmed, so the order stays pending and
+		// genuine. It is still not confirmed, so the payment stays pending and
 		// PayFast's retry gets another chance.
 		return fmt.Errorf("%w: %w: %w", payment.ErrRetryable, ErrNotValidated, err)
 	}

@@ -15,7 +15,7 @@ import (
 // hundred bytes; this is room for a large one and not for anything else.
 const maxAPIResponseBytes = 64 << 10
 
-// Payment is SnapScan's payment object, as much of it as this store reads.
+// Payment is SnapScan's payment object, as much of it as this server reads.
 //
 // Amounts are integer cents. RequiredAmount is a pointer because it is absent
 // unless the QR carried an amount, and "absent" has to be distinguishable from
@@ -52,7 +52,7 @@ func (g *Gateway) getPayment(ctx context.Context, id int64) (Payment, error) {
 	res, err := g.client.Do(req)
 	if err != nil {
 		// A network failure is not a rejection: the notification may well be
-		// genuine. It is still not confirmed, so the order stays as it was and
+		// genuine. It is still not confirmed, so the payment stays as it was and
 		// SnapScan's retry — three minutes of them — gets another chance.
 		return Payment{}, fmt.Errorf("%w: %w: %w", payment.ErrRetryable, ErrNotValidated, err)
 	}
@@ -85,7 +85,7 @@ func (g *Gateway) getPayment(ctx context.Context, id int64) (Payment, error) {
 		return Payment{}, fmt.Errorf("%w: asked for payment %d and got %d", ErrNotValidated, id, p.ID)
 	}
 	// A refund arriving down the payment webhook would otherwise read as a
-	// payment and credit an order for money going the other way.
+	// payment and credit a registration for money going the other way.
 	if p.TransactionType != "" && p.TransactionType != "payment" {
 		return Payment{}, fmt.Errorf("%w: payment %d is a %q, not a payment", ErrNotValidated, id, p.TransactionType)
 	}

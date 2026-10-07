@@ -1,9 +1,9 @@
 // Package payment is the gateway-agnostic half of taking money: the interface a
-// gateway implements, the values it exchanges with the rest of the store, and a
+// gateway implements, the values it exchanges with the rest of the server, and a
 // fake for tests.
 //
 // Two real gateways ship, in internal/payment/payfast and
-// internal/payment/snapscan, and a store may enable either or both. The split
+// internal/payment/snapscan, and a site may enable either or both. The split
 // exists so that adding a third is a documented extension point rather than a
 // fork, and so the handler tests never talk to a payment provider — see fake.go
 // and CONTRIBUTING.md.
@@ -15,7 +15,7 @@
 // not a quirk of one:
 //
 //   - **A hand-over is not always a form post.** PayFast wants a cross-origin
-//     POST of signed fields; SnapScan wants the shopper to open a single URL,
+//     POST of signed fields; SnapScan wants the registrant to open a single URL,
 //     which on a phone opens its app and on a desktop is a QR code to scan. Hence
 //     Handover, with a Kind, rather than a form and nothing else.
 //   - **A notification is not always authenticated from its body.** PayFast signs
@@ -42,8 +42,8 @@ type Request struct {
 	PaymentID   string
 	AmountCents int64
 	Currency    string
-	// ItemName is a one-line description of the purchase, shown on the
-	// gateway's payment page and on the customer's statement. A gateway with
+	// ItemName is a one-line description of the registration, shown on
+	// the gateway's payment page and on the registrant's statement. A gateway with
 	// nowhere to put it ignores it.
 	ItemName string
 
@@ -56,19 +56,19 @@ type Request struct {
 // slice and never a map.
 type Field struct{ Name, Value string }
 
-// HandoverKind is how the shopper reaches the gateway.
+// HandoverKind is how the registrant reaches the gateway.
 type HandoverKind int
 
 const (
 	// HandoverPostForm is a cross-origin POST of hidden fields, submitted on
 	// load. PayFast.
 	HandoverPostForm HandoverKind = iota
-	// HandoverLink is a single URL the shopper follows, shown as both a link and
+	// HandoverLink is a single URL the registrant follows, shown as both a link and
 	// a QR code because one page has to serve a phone and a desktop. SnapScan.
 	HandoverLink
 )
 
-// Handover is how a gateway takes the shopper, and the one place the two shapes
+// Handover is how a gateway takes the registrant, and the one place the two shapes
 // meet. A template switches on Kind; nothing else needs to know which gateway is
 // in play.
 type Handover struct {
@@ -126,7 +126,7 @@ type Notification struct {
 }
 
 // Outcome is a gateway's verdict, normalised. Only OutcomePaid moves money in
-// this store's records.
+// this server's records.
 type Outcome int
 
 const (
@@ -140,7 +140,7 @@ const (
 )
 
 // Callback is an authenticated asynchronous notification from a gateway,
-// normalised into this store's vocabulary.
+// normalised into this server's vocabulary.
 type Callback struct {
 	PaymentID string // the gateway's echo of our payment id
 	Ref       string // the gateway's own payment id
@@ -149,7 +149,7 @@ type Callback struct {
 	// so no gateway's vocabulary reaches the handler.
 	Outcome Outcome
 	// Amount is the amount as received, kept as a string for the audit trail.
-	// AmountCents is the same figure parsed, for comparing against the order.
+	// AmountCents is the same figure parsed, for comparing against the payment.
 	Amount      string
 	AmountCents int64
 	Raw         []byte // the callback body exactly as received, for disputes
@@ -158,28 +158,28 @@ type Callback struct {
 // Paid reports whether the money is actually taken.
 func (c Callback) Paid() bool { return c.Outcome == OutcomePaid }
 
-// Gateway is everything the store needs from a payment provider.
+// Gateway is everything the server needs from a payment provider.
 //
 // Implementing one is a small job on purpose. The parts that are genuinely
-// difficult — proving a callback is real, keeping the order and stock consistent
-// — are either inside the implementation or in the store, not spread across the
-// handler.
+// difficult — proving a callback is real, keeping the registration and its seats
+// consistent — are either inside the implementation or in the registrations
+// store, not spread across the handler.
 type Gateway interface {
 	// Name is the gateway's identifier, used in the callback route
-	// (/payments/{gateway}/callback), stored on the order, and submitted by the
-	// checkout form when a store offers more than one. It must be stable: it is
-	// written into order rows that outlive any release.
+	// (/payments/{gateway}/callback), stored on the payment, and submitted by
+	// the registration form when a site offers more than one. It must be stable:
+	// it is written into payment rows that outlive any release.
 	Name() string
 
-	// Label is what the checkout calls this gateway to a shopper.
+	// Label is what the checkout calls this gateway to a registrant.
 	Label() string
 
 	// Currency is what this gateway settles in. The server refuses to start when
 	// it disagrees with CURRENCY, because discovering it at the first checkout —
-	// after an order row already exists — is worse.
+	// after a registration row already exists — is worse.
 	Currency() string
 
-	// Handover builds the hand-over for one order.
+	// Handover builds the hand-over for one payment.
 	Handover(Request) (Handover, error)
 
 	// CSP is what this gateway needs the Content-Security-Policy to permit.

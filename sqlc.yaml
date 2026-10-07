@@ -65,7 +65,7 @@ sql:
               type: "Time"
               pointer: true
 
-          # Quantities and stock counts as int. They are INTEGER in the schema,
+          # Capacities, limits and positions as int. They are INTEGER in the schema,
           # so sqlc would default to int32 and put a conversion at every use.
           - db_type: "pg_catalog.int4"
             go_type: "int"

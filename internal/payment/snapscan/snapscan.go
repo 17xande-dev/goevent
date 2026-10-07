@@ -1,11 +1,11 @@
 // Package snapscan implements payment.Gateway for SnapScan, the South African
 // QR payment app.
 //
-// It is the second gateway in this store, and the one that made the payment
+// It is the second gateway in this project, and the one that made the payment
 // interface honest: SnapScan is not a redirect gateway. There is no page to post
-// signed fields to. A payment is a URL carrying an order reference and an amount,
-// which the shopper opens — on a phone that URL opens the SnapScan app, and on a
-// desktop it is a QR code to scan with one. The store then hears about the
+// signed fields to. A payment is a URL carrying a payment reference and an amount,
+// which the registrant opens — on a phone that URL opens the SnapScan app, and on a
+// desktop it is a QR code to scan with one. The server then hears about the
 // outcome twice over: once from a webhook, and once from an authenticated read of
 // SnapScan's own API, which is the only half it actually trusts.
 //
@@ -18,7 +18,7 @@
 //     this package has a "test mode" knob that could be left on.
 //   - **strict=true and the signature do different jobs.** The Secure QR
 //     signature fixes the amount; strict additionally refuses a second successful
-//     payment against the same id. A store wants both, so both are sent whenever
+//     payment against the same id. A site wants both, so both are sent whenever
 //     a validation key is configured.
 //   - **The webhook proves very little on its own.** SnapScan's own documentation
 //     calls it "an unauthenticated event stream" and points at the API for
@@ -80,14 +80,14 @@ type Config struct {
 	// the server refuses to start when it is missing.
 	WebhookAuthKey string
 	// ValidationKey enables the Secure QR Payload signature, which stops a
-	// shopper editing the amount or the reference between the page and the scan.
+	// registrant editing the amount or the reference between the page and the scan.
 	// It is optional because SnapScan enables the feature per account on
 	// request; without it, strict=true still fixes a minimum and blocks a repeat
 	// payment on the same id.
 	ValidationKey string
 
-	// SuccessURL and FailURL are where SnapScan returns the shopper's browser.
-	// Both are informational: this store believes the callback, not the return.
+	// SuccessURL and FailURL are where SnapScan returns the registrant's browser.
+	// Both are informational: this server believes the callback, not the return.
 	SuccessURL string
 	FailURL    string
 
@@ -117,7 +117,7 @@ type Gateway struct {
 
 // New validates the configuration and returns a gateway. Everything it can check
 // up front it checks at startup, because the first time this configuration is
-// otherwise exercised is a real shopper trying to pay.
+// otherwise exercised is a real registrant trying to pay.
 func New(cfg Config) (*Gateway, error) {
 	var missing []string
 	for _, f := range []struct{ name, value string }{
@@ -125,7 +125,7 @@ func New(cfg Config) (*Gateway, error) {
 		{"API key", cfg.APIKey},
 		// Not optional, and deliberately so: a notification with nothing to
 		// check its HMAC against is an unauthenticated request that can mark
-		// orders paid.
+		// registrations paid.
 		{"webhook authentication key", cfg.WebhookAuthKey},
 		{"success URL", cfg.SuccessURL},
 		{"fail URL", cfg.FailURL},
@@ -138,7 +138,7 @@ func New(cfg Config) (*Gateway, error) {
 		return nil, fmt.Errorf("snapscan: missing configuration: %s", strings.Join(missing, ", "))
 	}
 	// The snap code is a path segment in every QR URL, and a URL built from an
-	// unexpected one fails at the shopper rather than here.
+	// unexpected one fails at the registrant rather than here.
 	if strings.ContainsAny(cfg.SnapCode, "/?#& ") {
 		return nil, fmt.Errorf("snapscan: snap code %q contains a character that cannot appear in a URL path", cfg.SnapCode)
 	}
@@ -223,7 +223,7 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 		return payment.Handover{}, ErrAmount
 	}
 	if r.PaymentID == "" {
-		return payment.Handover{}, errors.New("snapscan: request has no order id")
+		return payment.Handover{}, errors.New("snapscan: request has no payment id")
 	}
 
 	// SnapScan takes the amount in integer cents, not as a decimal string —
@@ -243,7 +243,7 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 		q.Set("signature", Sign(g.cfg.ValidationKey, r.AmountCents, r.PaymentID))
 	}
 
-	// The link additionally says where to put the shopper's browser afterwards.
+	// The link additionally says where to put the registrant's browser afterwards.
 	link := url.Values{}
 	maps.Copy(link, q)
 	link.Set("s_url", payment.ReturnURL(g.cfg.SuccessURL, r.PaymentID))
@@ -281,9 +281,9 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 // SnapScan's reference implementation does, and a signature is only right if it
 // is computed the way the verifier computes it. The amount is the integer cents
 // exactly as they appear in the URL; a mismatch of one character between the two
-// makes SnapScan refuse the payment in front of the shopper.
-func Sign(validationKey string, amountCents int64, orderID string) string {
-	msg := validationKey + "||" + strconv.FormatInt(amountCents, 10) + "||" + orderID
+// makes SnapScan refuse the payment in front of the registrant.
+func Sign(validationKey string, amountCents int64, paymentID string) string {
+	msg := validationKey + "||" + strconv.FormatInt(amountCents, 10) + "||" + paymentID
 	mac := hmac.New(sha256.New, []byte(validationKey))
 	mac.Write([]byte(msg))
 	return hex.EncodeToString(mac.Sum(nil))

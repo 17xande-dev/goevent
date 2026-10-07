@@ -31,7 +31,7 @@ func TestAdminSetup_ClaimsTheFirstAccount(t *testing.T) {
 	s := newUnclaimedApp(t)
 	token := setupToken(t, s)
 
-	// While nobody has claimed the store the login form is a dead end, so it
+	// While nobody has claimed the site the login form is a dead end, so it
 	// points at the page that is not.
 	res, _ := get(t, s.srv, "/admin/login")
 	if res.StatusCode != http.StatusSeeOther {
@@ -109,7 +109,7 @@ func TestAdminSetup_LocksAfterOneClaim(t *testing.T) {
 		t.Fatalf("claim = %d %s", res.StatusCode, body)
 	}
 
-	// A 404 rather than a redirect or a message: on a claimed store the page does
+	// A 404 rather than a redirect or a message: on a claimed site the page does
 	// not exist, and nothing about a live deployment should advertise the shape of
 	// its bootstrap.
 	if res, _ := get(t, s.srv, "/admin/setup"); res.StatusCode != http.StatusNotFound {
@@ -133,11 +133,11 @@ func TestAdminSetup_LocksAfterOneClaim(t *testing.T) {
 	// covers the form rendering for a jar that is not.
 	res, _ = get(t, s.srv, "/admin/login")
 	if got := res.Header.Get("Location"); got != adminHome {
-		t.Errorf("GET /admin/login on a claimed store → %q, want /admin/", got)
+		t.Errorf("GET /admin/login on a claimed site → %q, want /admin/", got)
 	}
 }
 
-// A store with accounts has no setup page at all, whether or not a token was ever
+// A site with accounts has no setup page at all, whether or not a token was ever
 // issued — which is the state every deployment past its first day is in.
 func TestAdminSetup_AbsentOnceAnAdminExists(t *testing.T) {
 	s := newApp(t)
@@ -155,7 +155,7 @@ func TestAdminSetup_AbsentOnceAnAdminExists(t *testing.T) {
 		t.Errorf("POST /admin/setup = %d, want 404", res.StatusCode)
 	}
 	if _, err := s.users.GetByEmail(t.Context(), "sneaky@example.com"); err == nil {
-		t.Error("a claim on a store that already has an owner created an account")
+		t.Error("a claim on a site that already has an owner created an account")
 	}
 }
 

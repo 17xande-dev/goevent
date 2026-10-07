@@ -375,7 +375,7 @@ func TestGuardedWritesReportAMissingAccountAsNotFound(t *testing.T) {
 func TestListAndCount(t *testing.T) {
 	s, _, ctx := newStore(t)
 	if n, err := s.Count(ctx); err != nil || n != 0 {
-		t.Fatalf("Count on an unclaimed store = %d, %v; want 0, nil", n, err)
+		t.Fatalf("Count on an unclaimed site = %d, %v; want 0, nil", n, err)
 	}
 
 	mustCreate(t, s, ctx, "zoe@example.com", "correct horse battery", RoleViewer)
@@ -468,7 +468,7 @@ func TestClaimSetup(t *testing.T) {
 		t.Fatalf("ClaimSetup(wrong token) = %v, want ErrBadSetupToken", err)
 	}
 	// A refused claim must leave the token spendable, or one typo locks the
-	// operator out of their own store.
+	// operator out of their own site.
 	if n, _ := s.Count(ctx); n != 0 {
 		t.Fatalf("a refused claim created %d accounts", n)
 	}
@@ -536,7 +536,7 @@ func timeCall(fn func()) time.Duration {
 // Two transactions removing *different* owners touch different rows, so they take
 // no lock in common, and under READ COMMITTED each evaluates the count against
 // its own snapshot: both see two enabled owners, both pass, both commit, and the
-// store is left with none. That is reproducible in a psql session in seconds.
+// site is left with none. That is reproducible in a psql session in seconds.
 //
 // The interleaving is driven explicitly rather than by racing two goroutines and
 // hoping. A timing-based version of this test passed just as happily with the

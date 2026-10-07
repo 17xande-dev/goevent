@@ -332,9 +332,9 @@ type page struct {
 	Currency  string
 	CSRFToken string
 
-	// BaseURL is the store's own address. Templates need it only where a link has
-	// to work from somewhere else — the embedded catalog fragment renders inside
-	// another origin's page, where a relative href would point at that origin.
+	// BaseURL is the site's own address. Templates need it only where a link has
+	// to work from somewhere else — inside another origin's page, where a
+	// relative href would point at that origin.
 	BaseURL string
 
 	// FontCSSURL is a hosted font service's stylesheet, when one is configured, for

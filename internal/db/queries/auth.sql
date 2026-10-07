@@ -5,7 +5,7 @@
 -- cannot drift from the table the way a hand-maintained one could.
 
 -- name: CountAdminUsers :one
--- The boot check behind the setup flow: zero means nobody has claimed the store.
+-- The boot check behind the setup flow: zero means nobody has claimed the site.
 SELECT count(*) FROM admin_users;
 
 -- name: ListAdminUsers :many
@@ -62,7 +62,7 @@ UPDATE admin_users SET last_login_at = now() WHERE id = $1;
 -- A transaction-scoped advisory lock is the fix rather than SERIALIZABLE, which
 -- would need retry logic on serialisation failure at every call site, or
 -- SELECT ... FOR UPDATE over the owner rows, which needs a consistent lock order
--- to avoid deadlocking. These operations happen a handful of times in a store's
+-- to avoid deadlocking. These operations happen a handful of times in a site's
 -- life, so serialising them globally costs nothing. The same reasoning and shape
 -- as db.go's migration lock.
 -- name: LockOwnerGuard :exec
@@ -139,7 +139,7 @@ ON CONFLICT (id) DO NOTHING;
 -- name: GetSetupToken :one
 SELECT * FROM admin_setup WHERE id = TRUE;
 
--- Whether the store is still claimable, by exactly the conditions ConsumeSetupToken
+-- Whether the site is still claimable, by exactly the conditions ConsumeSetupToken
 -- enforces. Asking "is consumed_at NULL" alone is not the same question: if a first
 -- account ever arrives by some path other than the claim flow — a seed command, a
 -- manual INSERT, a recovery CLI — the token stays unconsumed for ever, and a setup

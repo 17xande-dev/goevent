@@ -81,7 +81,7 @@ func TestRateLimit_TellsTheClientWhenToReturn(t *testing.T) {
 }
 
 func TestRateLimit_IsPerClient(t *testing.T) {
-	// One shopper hitting a limit must not stop everybody else buying things.
+	// One registrant hitting a limit must not stop everybody else registering.
 	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, ClientIPRemote)
 
 	for _, ip := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {

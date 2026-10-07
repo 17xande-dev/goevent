@@ -35,8 +35,8 @@ func TestAssets_BundledImagesAreServed(t *testing.T) {
 	withStaticDir(t, "")
 	srv := newPublic(t, testConfig(), "")
 
-	// The logo and the placeholder ship in the binary: a store with no configuration
-	// at all still has a mark in its header and a picture on every product card.
+	// The logo and the placeholder ship in the binary: a site with no configuration
+	// at all still has a mark in its header and a picture for every event.
 	for name, wantType := range map[string]string{
 		"logo.svg":        "image/svg+xml",
 		"placeholder.svg": "image/svg+xml",
@@ -218,7 +218,7 @@ func TestAssets_StaticDirCanAddNewNames(t *testing.T) {
 
 func TestAssets_StaticDirCannotPublishAnythingItLikes(t *testing.T) {
 	// The extension map is the gate on the override directory too. Dropping an .html
-	// or a .php in there must not make it a URL on the store's own origin.
+	// or a .php in there must not make it a URL on the site's own origin.
 	dir := t.TempDir()
 	for _, name := range []string{"evil.html", "shell.php", "notes.txt", "secrets.env"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("<script>alert(1)</script>"), 0o644); err != nil {

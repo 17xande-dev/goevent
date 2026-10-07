@@ -25,7 +25,7 @@ func TestNewLogger_Format(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			line := captureStdout(t, func() {
-				newLogger("info", tc.format).Error("something broke", "order", "abc")
+				newLogger("info", tc.format).Error("something broke", "registration", "abc")
 			})
 
 			var got map[string]any
@@ -49,7 +49,7 @@ func TestNewLogger_Format(t *testing.T) {
 				}
 			}
 			// Attributes are untouched either way — only the two reserved keys move.
-			if got["order"] != "abc" {
+			if got["registration"] != "abc" {
 				t.Errorf("attributes were disturbed: %s", line)
 			}
 		})

@@ -9,10 +9,10 @@ import (
 	"github.com/17xande-dev/goevent/internal/middleware"
 )
 
-// How the store answers when something has gone wrong.
+// How the site answers when something has gone wrong.
 //
 // Three pages, because they say three different things. `not_found` is the common
-// one and has its own copy and a search box. `error_client` covers the rest of the
+// one and has its own copy and a link onward. `error_client` covers the rest of the
 // 4xx range — you asked for something that is not yours, or came too fast — and
 // `error_server` covers 5xx, where the honest message is that this is ours and not
 // yours.
@@ -172,9 +172,9 @@ func (h *Handler) renderError(w http.ResponseWriter, r *http.Request, name strin
 	}
 
 	// htmx swaps error responses, so without this the whole document would be
-	// pasted into whatever the request was aimed at — the cart-count span, say.
-	// Errors that are *meant* for their target, like the cart's refusals, render a
-	// fragment and never come through here.
+	// pasted into whatever the request was aimed at — the payment-status poll,
+	// say. Errors that are *meant* for their target render a fragment and never
+	// come through here.
 	if isHTMX(r) {
 		w.Header().Set("HX-Retarget", "body")
 		w.Header().Set("HX-Reswap", "innerHTML")

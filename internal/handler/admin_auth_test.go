@@ -45,8 +45,8 @@ func TestAdminAuth_SignsInWithEmailAndPassword(t *testing.T) {
 	if cookie.SameSite != http.SameSiteLaxMode {
 		t.Errorf("SameSite = %v, want Lax", cookie.SameSite)
 	}
-	// Scoped to /admin, so it is never sent with the cookie-free, embeddable
-	// storefront fragments.
+	// Scoped to /admin, so it is never sent with a request for the public event
+	// pages.
 	if cookie.Path != "/admin" {
 		t.Errorf("Path = %q, want /admin", cookie.Path)
 	}

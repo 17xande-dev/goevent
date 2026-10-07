@@ -77,7 +77,7 @@ func TestRequireAdmin_AllowsAndCarriesTheUser(t *testing.T) {
 		t.Fatalf("IssueSession: %v", err)
 	}
 
-	w := request(t, h, http.MethodGet, "/admin/products", token)
+	w := request(t, h, http.MethodGet, "/admin/events", token)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -112,12 +112,12 @@ func TestRequireAdmin_RedirectsWithoutALiveSession(t *testing.T) {
 	}
 	for name, token := range cases {
 		h, _ := protected(t, s)
-		w := request(t, h, http.MethodGet, "/admin/products", token)
+		w := request(t, h, http.MethodGet, "/admin/events", token)
 
 		if w.Code != http.StatusSeeOther {
 			t.Errorf("%s: status = %d, want 303", name, w.Code)
 		}
-		if got := w.Header().Get("Location"); got != "/admin/login?next=%2Fadmin%2Fproducts" {
+		if got := w.Header().Get("Location"); got != "/admin/login?next=%2Fadmin%2Fevents" {
 			t.Errorf("%s: Location = %q", name, got)
 		}
 		if w.Body.String() == "secret" {
@@ -126,7 +126,7 @@ func TestRequireAdmin_RedirectsWithoutALiveSession(t *testing.T) {
 	}
 
 	h, _ := protected(t, s)
-	if w := request(t, h, http.MethodGet, "/admin/products", live); w.Code != http.StatusOK {
+	if w := request(t, h, http.MethodGet, "/admin/events", live); w.Code != http.StatusOK {
 		t.Errorf("the live session was rejected too: %d", w.Code)
 	}
 }
@@ -146,7 +146,7 @@ func TestRequireAdmin_RefusesADisabledAccount(t *testing.T) {
 		t.Fatalf("IssueSession: %v", err)
 	}
 	h, _ := protected(t, s)
-	if w := request(t, h, http.MethodGet, "/admin/products", token); w.Code != http.StatusOK {
+	if w := request(t, h, http.MethodGet, "/admin/events", token); w.Code != http.StatusOK {
 		t.Fatalf("not signed in at the start of the test: %d", w.Code)
 	}
 
@@ -160,7 +160,7 @@ func TestRequireAdmin_RefusesADisabledAccount(t *testing.T) {
 	}
 
 	h, _ = protected(t, s)
-	w := request(t, h, http.MethodGet, "/admin/products", token)
+	w := request(t, h, http.MethodGet, "/admin/events", token)
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303", w.Code)
 	}
@@ -175,7 +175,7 @@ func TestRequireAdmin_HTMXGets401(t *testing.T) {
 
 	// A fragment request must not be answered with a login page: htmx would
 	// swap it into the middle of the current document.
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/admin/products", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/admin/events", nil)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -199,7 +199,7 @@ func TestRequireAdmin_StoreErrorIs500(t *testing.T) {
 	pool.Close()
 
 	h, _ := protected(t, s)
-	w := request(t, h, http.MethodGet, "/admin/products", "any-token-at-all")
+	w := request(t, h, http.MethodGet, "/admin/events", "any-token-at-all")
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", w.Code)
 	}
@@ -209,11 +209,11 @@ func TestRequireAdmin_NextOnlyForSafeGETs(t *testing.T) {
 	s, _, _ := store(t)
 
 	cases := []struct{ method, target, want string }{
-		{http.MethodGet, "/admin/products", "/admin/login?next=%2Fadmin%2Fproducts"},
-		{http.MethodGet, "/admin/orders?state=paid", "/admin/login?next=%2Fadmin%2Forders%3Fstate%3Dpaid"},
+		{http.MethodGet, "/admin/events", "/admin/login?next=%2Fadmin%2Fevents"},
+		{http.MethodGet, "/admin/registrations?state=paid", "/admin/login?next=%2Fadmin%2Fregistrations%3Fstate%3Dpaid"},
 		// A POST is not resumable: signing in and replaying a form submission the
 		// person cannot see is worse than landing them on the admin's front page.
-		{http.MethodPost, "/admin/products", "/admin/login"},
+		{http.MethodPost, "/admin/events", "/admin/login"},
 	}
 	for _, tc := range cases {
 		h, _ := protected(t, s)
@@ -228,7 +228,7 @@ func TestAdminUser_AbsentOutsideRequireAdmin(t *testing.T) {
 	// Nothing outside this package can put a User into a request context, so a
 	// handler mounted without RequireAdmin gets a false rather than somebody
 	// else's account.
-	req := httptest.NewRequest(http.MethodGet, "/admin/products", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/events", nil)
 	if u, ok := AdminUser(req); ok {
 		t.Errorf("AdminUser on a bare request returned %+v", u)
 	}

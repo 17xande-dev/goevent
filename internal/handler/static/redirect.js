@@ -2,7 +2,7 @@
 //
 // This is a file rather than three lines inline because the Content-Security-Policy
 // is `script-src 'self'` with no 'unsafe-inline': an inline <script> or an onload
-// attribute is blocked, and the shopper would sit on a page waiting for something
+// attribute is blocked, and the registrant would sit on a page waiting for something
 // that the browser has silently refused to run. Keeping the policy tight and
 // serving this from the binary is the same trade the vendored htmx makes.
 //

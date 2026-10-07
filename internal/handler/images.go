@@ -10,9 +10,9 @@ import (
 	"github.com/17xande-dev/goevent/internal/blob"
 )
 
-// Serving disk-backed product images.
+// Serving disk-backed event images.
 //
-// Registered only when IMAGE_DIR is configured; a bucket-backed store serves its
+// Registered only when IMAGE_DIR is configured; a bucket-backed site serves its
 // images from the bucket and this route does not exist. Reads are the only thing
 // here — uploads go through the admin.
 //
@@ -20,7 +20,7 @@ import (
 // be escaped even by a symlink inside the directory, which a filepath.Clean on the
 // request path would not catch.
 
-// RegisterImages wires the image route for a disk-backed store.
+// RegisterImages wires the image route for a disk-backed site.
 func (h *Handler) RegisterImages(mux *http.ServeMux, dir string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

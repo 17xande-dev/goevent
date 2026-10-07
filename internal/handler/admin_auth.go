@@ -29,7 +29,7 @@ type loginPage struct {
 
 	// Notice is why they are back here, looked up from a fixed map by code — a
 	// changed password ends every session, and arriving at a login form with no
-	// explanation looks like the store signed you out for no reason.
+	// explanation looks like the site signed you out for no reason.
 	Notice string
 }
 
@@ -51,7 +51,7 @@ type setupPage struct {
 }
 
 func (h *Handler) adminLoginForm(w http.ResponseWriter, r *http.Request) {
-	// Nobody has claimed this store yet: the login form is a dead end, and the
+	// Nobody has claimed this site yet: the login form is a dead end, and the
 	// claim page is where an operator needs to be. Checked before the cookie,
 	// because a session cannot exist while there are no accounts.
 	pending, ok := h.setupPending(w, r)
@@ -159,7 +159,7 @@ func (h *Handler) adminLogout(w http.ResponseWriter, r *http.Request) {
 // adminSetupForm offers the first account, and 404s once there is one.
 //
 // A 404 rather than a redirect, and the same for the POST: setup is not a page
-// that is "closed", it is a page that does not exist on a store that has been
+// that is "closed", it is a page that does not exist on a site that has been
 // claimed. Nothing about a live deployment should advertise the shape of its
 // bootstrap.
 func (h *Handler) adminSetupForm(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +225,7 @@ func (h *Handler) adminSetupClaim(w http.ResponseWriter, r *http.Request) {
 			errs.Add("token", "That setup token is not right.")
 			h.renderSetup(w, r, http.StatusUnauthorized, email, name, errs)
 		case errors.Is(err, auth.ErrSetupClosed):
-			// Somebody claimed the store between the check above and here.
+			// Somebody claimed the site between the check above and here.
 			h.notFound(w, r)
 		case errors.Is(err, auth.ErrEmailTaken):
 			errs.Add("email", "An administrator with that email already exists.")
@@ -254,7 +254,7 @@ func (h *Handler) renderSetup(w http.ResponseWriter, r *http.Request, status int
 	})
 }
 
-// setupPending answers whether the store is still claimable. The second return is
+// setupPending answers whether the site is still claimable. The second return is
 // false when it could not find out, in which case the request has already been
 // answered with a 500 and the caller must return without writing anything more.
 //
@@ -264,8 +264,8 @@ func (h *Handler) renderSetup(w http.ResponseWriter, r *http.Request, status int
 // second document appended to it and a superfluous WriteHeader in the log.
 //
 // Failing closed on an error would 404 the setup page during a database blip and
-// leave an operator convinced the store was already claimed; failing open would
-// offer a claim form on a store that has administrators. Neither is a guess worth
+// leave an operator convinced the site was already claimed; failing open would
+// offer a claim form on a site that has administrators. Neither is a guess worth
 // making, so an error is an error.
 func (h *Handler) setupPending(w http.ResponseWriter, r *http.Request) (pending, ok bool) {
 	pending, err := h.users.SetupPending(r.Context())
@@ -297,7 +297,7 @@ func (h *Handler) currentSession(r *http.Request) (auth.User, bool) {
 // An allowlist rather than a blocklist: it must be a path under /admin/, which
 // rules out an absolute URL, a protocol-relative //evil.example (a host, not a
 // path, to a browser), and a header-splitting CR or LF, without needing to have
-// thought of each of them. A redirect the store hands out is a redirect somebody
+// thought of each of them. A redirect the site hands out is a redirect somebody
 // will use to make a phishing link look like it came from here.
 func safeNext(next string) string {
 	if next == "" || !strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "/admin//") {
@@ -324,8 +324,8 @@ func safeNext(next string) string {
 }
 
 // sessionCookie builds the admin cookie, or its removal when value is empty.
-// Path is /admin, so the cookie is never sent with a storefront request and
-// cannot leak into the embeddable, deliberately cookie-free catalog fragments.
+// Path is /admin, so the cookie is never sent with a request for the public
+// event pages.
 func (h *Handler) sessionCookie(value string, ttl time.Duration) *http.Cookie {
 	c := &http.Cookie{
 		Name:     auth.CookieName,
@@ -335,7 +335,7 @@ func (h *Handler) sessionCookie(value string, ttl time.Duration) *http.Cookie {
 		Secure:   h.cfg.CookieSecure,
 		// Hard-coded, not configurable. Strict would sign an operator out of
 		// every link that arrives from anywhere else — including the ones in the
-		// order notification emails this store sends itself — and None would
+		// registration notification emails this server sends itself — and None would
 		// send the admin session with a cross-site request, which is the whole
 		// thing CSRF protection exists to stop needing to worry about.
 		SameSite: http.SameSiteLaxMode,

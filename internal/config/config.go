@@ -101,18 +101,18 @@ type Config struct {
 	// Blob is object storage for event images.
 	Blob Blob
 
-	// ImageDir stores product images in a local directory served by this server,
-	// for a shop that wants no object storage at all. Mutually exclusive with Blob:
+	// ImageDir stores event images in a local directory served by this server,
+	// for a site that wants no object storage at all. Mutually exclusive with Blob:
 	// two configured backends would leave "which one wins" to be guessed.
 	//
-	// A product image is only ever a bucket object or a file here. Pasting a URL
+	// An event image is only ever a bucket object or a file here. Pasting a URL
 	// from the general internet used to be allowed and no longer is: those bytes
-	// belong to somebody else, who can change or delete them, and a product page
+	// belong to somebody else, who can change or delete them, and an event page
 	// with a broken image is worse than one with none.
 	ImageDir string
 
 	// RateLimits are the per-IP limits on the three surfaces worth protecting.
-	// Defaults are deliberately loose enough that no real shopper or operator
+	// Defaults are deliberately loose enough that no real registrant or operator
 	// meets one — a limit that fires on ordinary use gets turned off.
 	RateLimits RateLimits
 
@@ -137,15 +137,15 @@ type Config struct {
 	//
 	// The detail is the Go error string, never a stack trace. That string names
 	// tables, columns and constraints, which is reconnaissance for anybody probing
-	// the store, so it is off the moment BaseURL is https — and an http deployment
+	// the site, so it is off the moment BaseURL is https — and an http deployment
 	// is one this project already treats as not-production, since it gets neither
 	// Secure cookies nor HSTS.
 	ShowErrorDetail bool
 
-	// EmbedOrigins are the origins allowed to fetch the read-only catalog
-	// fragments cross-origin, for dropping the catalog into a page hosted
-	// elsewhere. Empty means no CORS headers at all, which is the right default
-	// for a store that is only ever browsed on its own domain.
+	// EmbedOrigins are the origins allowed to frame the public event pages, for
+	// dropping them into a page hosted elsewhere. Empty means no other origin may,
+	// which is the right default for a site that is only ever browsed on its own
+	// domain.
 	EmbedOrigins []string
 
 	// FontOrigins are the origins a web font may be loaded from besides this one.
@@ -202,8 +202,9 @@ const MinSetupTokenLen = 32
 const payFastSandboxMerchantID = "10000100"
 
 // PayFast is what the PayFast gateway needs from the environment. The merchant
-// id and key are required: a store that cannot take a payment is not a store, and
-// discovering that at the first checkout is worse than discovering it at boot.
+// id switches it on and the key is then required: half a credential is a
+// configuration mistake, and discovering that at the first checkout is worse
+// than discovering it at boot.
 //
 // Notification URLs are derived from BaseURL rather than configured, with one
 // override — NotifyURL — because that is the one PayFast's own servers have to
@@ -234,7 +235,7 @@ func (p PayFast) Configured() bool { return p.MerchantID != "" }
 
 // SnapScan is what the SnapScan gateway needs from the environment.
 //
-// SnapScan is South Africa's QR payment app: the shopper opens a URL this store
+// SnapScan is South Africa's QR payment app: the registrant opens a URL this server
 // builds, on a phone through the app or on a desktop by scanning the QR code it
 // renders to.
 //
@@ -253,7 +254,7 @@ type SnapScan struct {
 	// WebhookAuthKey is the shared secret a notification's HMAC is computed with.
 	// Required whenever the gateway is enabled: without it, nothing about a
 	// notification can be checked, and the callback route is the one thing that
-	// can mark an order paid.
+	// can mark a registration paid.
 	WebhookAuthKey string
 	// ValidationKey enables the Secure QR Payload signature, which SnapScan
 	// switches on per account on request. Optional — see snapscan.Config.
@@ -263,7 +264,7 @@ type SnapScan struct {
 // Configured reports whether SnapScan is switched on.
 func (s SnapScan) Configured() bool { return s.SnapCode != "" }
 
-// Blob is object storage for product images, against anything speaking the S3
+// Blob is object storage for event images, against anything speaking the S3
 // API — Cloudflare R2, Google Cloud Storage in interoperability mode, or MinIO.
 //
 // PublicBaseURL is separate from Endpoint and cannot be derived from it: the
@@ -291,7 +292,7 @@ func (b Blob) Configured() bool { return b.Endpoint != "" }
 //
 // This is not fussiness. A CSP source whose path does not end in "/" must match a
 // URL's path *exactly*, so listing "http://host:9000/bucket" permits that one URL
-// and refuses "http://host:9000/bucket/products/x.jpg" — every actual image. MinIO
+// and refuses "http://host:9000/bucket/events/x.jpg" — every actual image. MinIO
 // and any path-style bucket URL hit this, and the failure is invisible outside a
 // browser: the image returns 200 to curl, the markup is correct, and the page shows
 // a broken image with a console warning nothing else surfaces.
@@ -305,7 +306,7 @@ func (b Blob) PublicOrigin() string {
 	return u.Scheme + "://" + u.Host
 }
 
-// ImagesEnabled reports whether a product can have an image at all — by upload to
+// ImagesEnabled reports whether an event can have an image at all — by upload to
 // object storage or to a local directory. With neither, the admin says so rather
 // than offering a form that could only fail.
 func (c Config) ImagesEnabled() bool { return c.Blob.Configured() || c.ImageDir != "" }
@@ -316,17 +317,17 @@ type RateLimits struct {
 	// LoginPerMinute guards the admin password against brute force. Low, because
 	// an operator signs in once.
 	LoginPerMinute int
-	// CheckoutPerMinute guards order creation. Loose, because refusing a real
-	// shopper costs a sale and double-clicking is normal.
+	// CheckoutPerMinute guards registration. Loose, because refusing a real
+	// registrant costs a registration and double-clicking is normal.
 	CheckoutPerMinute int
 	// CallbackPerMinute guards the payment callback, which is unauthenticated and
-	// makes the store POST to the gateway for every request it accepts. Generous:
-	// a throttled notification is retried, but throttling a busy shop's genuine
+	// makes the server POST to the gateway for every request it accepts. Generous:
+	// a throttled notification is retried, but throttling a busy site's genuine
 	// traffic delays real payments.
 	CallbackPerMinute int
 	// StatusPerMinute guards the checkout's payment-status poll, which a QR
-	// hand-over page asks for every few seconds while the shopper pays on their
-	// phone. It reads one order by the cart cookie and costs a single indexed
+	// hand-over page asks for every few seconds while the registrant pays on their
+	// phone. It reads one payment by its id and costs a single indexed
 	// query, so the allowance is roughly "twice what an open page asks for".
 	StatusPerMinute int
 }
@@ -389,12 +390,12 @@ type Graph struct {
 
 // Configured reports whether Graph can actually be used. All four are needed:
 // three for the token and From for the mailbox, and half-configured is the case
-// worth catching at startup rather than at the first order.
+// worth catching at startup rather than at the first registration.
 func (g Graph) Configured() bool {
 	return g.TenantID != "" && g.ClientID != "" && g.ClientSecret != "" && g.From != ""
 }
 
-// AllowsEmbedding reports whether any origin may fetch the catalog fragments.
+// AllowsEmbedding reports whether any other origin may frame the public event pages.
 func (c Config) AllowsEmbedding() bool { return len(c.EmbedOrigins) > 0 }
 
 // Load reads configuration from the environment, applying defaults and
@@ -499,7 +500,7 @@ func Load() (Config, error) {
 			missing = append(missing, "SNAPSCAN_API_KEY")
 		}
 		// Not optional. A notification with nothing to check its signature
-		// against is an unauthenticated request that can mark orders paid, and
+		// against is an unauthenticated request that can mark registrations paid, and
 		// the callback route is unauthenticated by definition — a payment
 		// provider cannot be given a session or a CSRF token.
 		if c.SnapScan.WebhookAuthKey == "" {
@@ -552,7 +553,7 @@ func Load() (Config, error) {
 	//
 	// Refused rather than ignored: silently falling back to the default would
 	// leave a deployment that had set it reading RemoteAddr instead — which is
-	// the proxy — so every shopper would share one rate-limit bucket and the
+	// the proxy — so every registrant would share one rate-limit bucket and the
 	// payment callback's source-IP check would reject every genuine
 	// notification. Both fail quietly, which is what a boot refusal is for.
 	if _, ok := os.LookupEnv("TRUST_PROXY_IP"); ok {
@@ -570,13 +571,13 @@ func Load() (Config, error) {
 
 	// Taking real money with the demo credentials is a contradiction, and it is
 	// the mistake that follows naturally from the other one: somebody discovers
-	// their store has been quietly running against the sandbox, sets
+	// their site has been quietly running against the sandbox, sets
 	// PAYFAST_SANDBOX=false, and does not realise the merchant id came from
 	// .env.example too. Every payment would then be signed with a key published
 	// in PayFast's own documentation.
 	//
 	// Refused at boot, where it costs one message, rather than at the first
-	// checkout, where it costs a customer.
+	// checkout, where it costs a registrant.
 	if c.PayFast.Configured() && !c.PayFast.Sandbox && c.PayFast.MerchantID == payFastSandboxMerchantID {
 		return Config{}, fmt.Errorf(
 			"config: PAYFAST_SANDBOX is false but PAYFAST_MERCHANT_ID is still %s, "+
@@ -593,7 +594,7 @@ func Load() (Config, error) {
 	}
 
 	// Whereas a wildcard font source would let any origin serve a stylesheet to
-	// every page of the store, the checkout included — the opposite of what this
+	// every page of the site, the checkout included — the opposite of what this
 	// directive is for. So: list them.
 	c.FontOrigins, err = parseOrigins("FONT_ORIGINS", false)
 	if err != nil {
@@ -616,7 +617,7 @@ func Load() (Config, error) {
 		}
 	}
 
-	// The limits are configurable because the right number depends on a shop's
+	// The limits are configurable because the right number depends on a site's
 	// traffic, and 0 means "no limit on this surface" — spelled out rather than
 	// implied by an empty value, since switching a protection off should be
 	// something an operator typed.
@@ -661,7 +662,7 @@ func Load() (Config, error) {
 	}
 	// Graph is all or nothing, for the same reason XOAUTH2 is below: a
 	// half-configured app registration would boot, then fail to send on the
-	// first paid order. Checked before the general mail requirement below, so a
+	// first confirmed registration. Checked before the general mail requirement below, so a
 	// deployment that got partway through setting Graph up gets the specific
 	// error rather than the generic "nothing is configured" one.
 	graph := c.Graph

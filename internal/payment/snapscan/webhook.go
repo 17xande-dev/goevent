@@ -39,13 +39,13 @@ const authScheme = "SnapScan signature="
 //     calls the webhook an unauthenticated event stream, and a shared secret is
 //     only as good as everywhere it has ever been copied.
 //  2. **SnapScan's API says the same thing.** The payment is read back over an
-//     authenticated connection, and the status and amount this store acts on come
+//     authenticated connection, and the status and amount this server acts on come
 //     from *that* response, never from the notification body. A forged body that
 //     somehow cleared the first check still cannot invent a completed payment.
 //
 // This is the same shape as the PayFast implementation's server-to-server
 // confirmation, for the same reason, and it is the whole argument for the
-// network call: without it, one leaked key is a free order.
+// network call: without it, one leaked key is a free registration.
 func (g *Gateway) ParseCallback(ctx context.Context, n payment.Notification) (payment.Callback, error) {
 	if len(n.Body) == 0 {
 		return payment.Callback{}, fmt.Errorf("%w: empty body", ErrMalformed)
@@ -73,18 +73,18 @@ func (g *Gateway) ParseCallback(ctx context.Context, n payment.Notification) (pa
 		return payment.Callback{}, err
 	}
 
-	// 3. Ours, not somebody else's. Two stores sharing one deployment's
+	// 3. Ours, not somebody else's. Two sites sharing one deployment's
 	//    configuration is the realistic version of this, and it would otherwise
-	//    credit orders here against payments made there.
+	//    credit registrations here against payments made there.
 	if !strings.EqualFold(confirmed.SnapCode, g.cfg.SnapCode) {
 		return payment.Callback{}, fmt.Errorf("%w: %q", ErrSnapCode, confirmed.SnapCode)
 	}
 
-	// The amount matched against the order is requiredAmount, the figure this
-	// store asked for — not totalAmount, which includes a tip on an account with
+	// The amount matched against the payment is requiredAmount, the figure this
+	// server asked for — not totalAmount, which includes a tip on an account with
 	// tipping enabled and would then fail the handler's equality check on a
 	// perfectly good payment. Its absence means the payment was not made against
-	// a QR this store generated, since every one of ours carries an amount.
+	// a QR this server generated, since every one of ours carries an amount.
 	if confirmed.RequiredAmount == nil {
 		return payment.Callback{}, fmt.Errorf("%w: payment %d has no requiredAmount", ErrMalformed, confirmed.ID)
 	}
@@ -127,7 +127,7 @@ func (g *Gateway) verifySignature(header string, body []byte) error {
 	return nil
 }
 
-// notification is the part of the webhook body this store reads. Everything
+// notification is the part of the webhook body this server reads. Everything
 // acted on is re-read from the API, so this exists only to find the payment
 // again — which is why it names one field.
 type notification struct {
@@ -158,7 +158,7 @@ func parsePayload(body []byte) (notification, error) {
 	return n, nil
 }
 
-// outcome maps SnapScan's status onto the store's vocabulary.
+// outcome maps SnapScan's status onto the server's vocabulary.
 //
 // There is no cancelled: SnapScan reports an abandoned payment as an error, or
 // not at all. Anything unrecognised stays pending rather than being called a

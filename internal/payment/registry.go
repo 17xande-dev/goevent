@@ -7,7 +7,7 @@ import (
 
 // ErrUnknownGateway is returned by Registry.Lookup for a name no configured
 // gateway answers to. It reaches two places: a checkout submitting a gateway the
-// store does not offer, and a callback arriving on a route for one.
+// site does not offer, and a callback arriving on a route for one.
 var ErrUnknownGateway = errors.New("payment: no such gateway")
 
 // Registry is the set of gateways a deployment has configured, in a stable
@@ -21,10 +21,10 @@ type Registry struct {
 }
 
 // NewRegistry returns a registry over the given gateways, in the order given.
-// It refuses an empty set and duplicate names: a store with no way to take money
+// It refuses an empty set and duplicate names: a site with no way to take money
 // should not start, and two gateways answering to one name would make
 // /payments/{gateway}/callback ambiguous — which is to say it would credit
-// orders using a gateway that never saw them.
+// registrations using a gateway that never saw them.
 func NewRegistry(gateways ...Gateway) (Registry, error) {
 	if len(gateways) == 0 {
 		return Registry{}, errors.New("payment: no payment gateway is configured")
@@ -66,7 +66,7 @@ func (r Registry) Default() Gateway { return r.gateways[0] }
 
 // CSP collects what every configured gateway needs the Content-Security-Policy
 // to permit. Directives nothing asks for come back empty rather than as a list
-// of blanks, so a store without a QR gateway gets no extra img-src entry.
+// of blanks, so a site without a QR gateway gets no extra img-src entry.
 func (r Registry) CSP() (formActions, imgSources []string) {
 	for _, g := range r.gateways {
 		c := g.CSP()

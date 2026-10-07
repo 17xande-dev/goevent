@@ -15,8 +15,8 @@ func testGateway(t *testing.T, edit func(*Config)) *Gateway {
 		SnapCode:       "shopalot",
 		APIKey:         "test-api-key",
 		WebhookAuthKey: "test-webhook-key",
-		SuccessURL:     "https://store.example/cart/checkout/success",
-		FailURL:        "https://store.example/cart/checkout/cancel",
+		SuccessURL:     "https://events.example/checkout/success",
+		FailURL:        "https://events.example/checkout/cancel",
 	}
 	if edit != nil {
 		edit(&cfg)
@@ -33,13 +33,13 @@ func testRequest() payment.Request {
 		PaymentID:   "5f1e4a2c-0000-4000-8000-00000000abcd",
 		AmountCents: 12550,
 		Currency:    "ZAR",
-		ItemName:    "Shopalot order 5F1E4A2C",
-		Email:       "buyer@example.com",
+		ItemName:    "Family Camp 2026 K7Q-4MZ",
+		Email:       "registrant@example.com",
 	}
 }
 
 // The QR URL is the whole payment: an id that comes back as merchantReference, an
-// amount SnapScan enforces, and the two URLs the shopper returns through.
+// amount SnapScan enforces, and the two URLs the registrant returns through.
 func TestHandover_BuildsThePaymentURL(t *testing.T) {
 	g := testGateway(t, nil)
 
@@ -67,28 +67,28 @@ func TestHandover_BuildsThePaymentURL(t *testing.T) {
 		t.Errorf("amount = %q, want integer cents", q.Get("amount"))
 	}
 	if q.Get("id") != testRequest().PaymentID {
-		t.Errorf("id = %q, want the order id", q.Get("id"))
+		t.Errorf("id = %q, want the payment id", q.Get("id"))
 	}
-	// strict is what refuses a second payment against the same order and an
+	// strict is what refuses a second payment against the same id and an
 	// amount below the one asked for.
 	if q.Get("strict") != "true" {
 		t.Errorf("strict = %q, want true", q.Get("strict"))
 	}
-	if q.Get("s_url") != "https://store.example/cart/checkout/success?payment="+testRequest().PaymentID {
+	if q.Get("s_url") != "https://events.example/checkout/success?payment="+testRequest().PaymentID {
 		t.Errorf("s_url = %q", q.Get("s_url"))
 	}
-	if q.Get("f_url") != "https://store.example/cart/checkout/cancel?payment="+testRequest().PaymentID {
+	if q.Get("f_url") != "https://events.example/checkout/cancel?payment="+testRequest().PaymentID {
 		t.Errorf("f_url = %q", q.Get("f_url"))
 	}
 	// No validation key configured, so no signature — an empty one would be
-	// refused by SnapScan in front of the shopper.
+	// refused by SnapScan in front of the registrant.
 	if q.Has("signature") {
 		t.Errorf("signature = %q with no validation key configured", q.Get("signature"))
 	}
 }
 
-// The QR image must lead to the same payment as the link, or a shopper scanning
-// and a shopper tapping pay different things.
+// The QR image must lead to the same payment as the link, or a registrant
+// scanning and a registrant tapping pay different things.
 func TestHandover_QRImageMatchesTheLink(t *testing.T) {
 	g := testGateway(t, nil)
 
@@ -109,7 +109,7 @@ func TestHandover_QRImageMatchesTheLink(t *testing.T) {
 	}
 
 	link, _ := url.Parse(h.Action)
-	// The payment itself must be identical, or a shopper scanning and a shopper
+	// The payment itself must be identical, or a registrant scanning and a registrant
 	// tapping pay different things.
 	for _, k := range []string{"id", "amount", "strict", "signature"} {
 		if img.Query().Get(k) != link.Query().Get(k) {
@@ -134,11 +134,11 @@ func TestHandover_QRImageMatchesTheLink(t *testing.T) {
 
 // Verified against SnapScan's own TypeScript sample: HMAC-SHA256 over
 // "key||amount||id" with the key as the secret, lowercase hex. A signature built
-// any other way is refused at the shopper, not here, so it is pinned by value.
+// any other way is refused at the registrant, not here, so it is pinned by value.
 func TestSign_MatchesSnapScansReferenceImplementation(t *testing.T) {
 	// SnapScan's own sample values, and the digest they produce. Pinned by value
 	// because there is no sandbox to discover a wrong one against: the first time
-	// a bad signature is noticed is a customer being refused at the till.
+	// a bad signature is noticed is a registrant being refused at the checkout.
 	const want = "92f0244c9fbbfab97c3938f3ee6bf507970ab1f143dad20f276e054f9adbb6c4"
 
 	got := Sign("my-validation-key", 10050, "ORDER-001")
@@ -172,7 +172,7 @@ func TestSign_IsStableAndDependsOnEveryPart(t *testing.T) {
 
 // With a validation key the URL carries a signature, and it signs the values the
 // URL actually carries — a mismatch of one character makes SnapScan refuse the
-// payment in front of the shopper.
+// payment in front of the registrant.
 func TestHandover_SignsWhenAValidationKeyIsConfigured(t *testing.T) {
 	g := testGateway(t, func(c *Config) { c.ValidationKey = "my-validation-key" })
 
@@ -188,7 +188,7 @@ func TestHandover_SignsWhenAValidationKeyIsConfigured(t *testing.T) {
 		t.Errorf("signature = %q, want %q", q.Get("signature"), want)
 	}
 	// strict stays on: the signature fixes the amount, and only strict stops the
-	// same order being paid twice.
+	// same payment being made twice.
 	if q.Get("strict") != "true" {
 		t.Error("strict was dropped when a signature was added")
 	}
@@ -235,7 +235,7 @@ func TestCSP_NamesTheImageOriginOnly(t *testing.T) {
 
 // Missing configuration has to fail at boot. The webhook key especially: without
 // it a notification cannot be authenticated at all, and the callback route is the
-// only thing that can mark an order paid.
+// only thing that can mark a registration paid.
 func TestNew_RefusesIncompleteConfiguration(t *testing.T) {
 	for name, edit := range map[string]func(*Config){
 		"no snap code":   func(c *Config) { c.SnapCode = "" },
@@ -253,8 +253,8 @@ func TestNew_RefusesIncompleteConfiguration(t *testing.T) {
 				SnapCode:       "shopalot",
 				APIKey:         "k",
 				WebhookAuthKey: "w",
-				SuccessURL:     "https://store.example/s",
-				FailURL:        "https://store.example/f",
+				SuccessURL:     "https://events.example/s",
+				FailURL:        "https://events.example/f",
 			}
 			edit(&cfg)
 			if _, err := New(cfg); err == nil {

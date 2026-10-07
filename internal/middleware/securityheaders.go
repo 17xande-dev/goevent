@@ -7,22 +7,22 @@ import (
 )
 
 // Policy is the parts of the Content-Security-Policy that depend on how this
-// particular store is deployed. Everything else in the policy is fixed, because
+// particular site is deployed. Everything else in the policy is fixed, because
 // the templates earn it.
 type Policy struct {
-	// FrameAncestors are the origins allowed to frame the store — where
+	// FrameAncestors are the origins allowed to frame the site — where
 	// embedding is permitted to happen. Empty means 'none'.
 	FrameAncestors []string
 
-	// FormActions are the external origins a form may post to, beyond the store
+	// FormActions are the external origins a form may post to, beyond the site
 	// itself. In practice this is the payment gateway: the checkout hands the
-	// shopper to it with a real form submission, and form-action 'self' alone
+	// registrant to it with a real form submission, and form-action 'self' alone
 	// makes the browser block that — silently enough to cost an afternoon.
 	FormActions []string
 
 	// ImgSources are the origins images may be loaded from besides this one — the
 	// object storage bucket, when one is configured. Empty means 'self' only, which
-	// is what a store serving its images from a local directory needs.
+	// is what a site serving its images from a local directory needs.
 	ImgSources []string
 
 	// FontSources are the origins a web font may come from besides this one — a
@@ -30,7 +30,7 @@ type Policy struct {
 	// is what the default theme's system font stack needs.
 	//
 	// These land in style-src as well as font-src, and the reason is not obvious:
-	// a hosted font service is two fetches, not one. The store links a stylesheet
+	// a hosted font service is two fetches, not one. The site links a stylesheet
 	// from the service, that stylesheet's @font-face rules name the font files, and
 	// the browser fetches those. Allowing only font-src blocks the stylesheet, so
 	// nothing ever asks for a font and the directive that was widened is never
@@ -40,7 +40,7 @@ type Policy struct {
 	// to serve a stylesheet is a smaller over-grant than a second knob that has to
 	// be kept in step with this one. What stays closed is the part that matters:
 	// script-src is untouched, so a font origin cannot run JavaScript on any page
-	// of this store.
+	// of this site.
 	FontSources []string
 
 	// HSTS adds Strict-Transport-Security. Only ever true on an https deployment:
@@ -65,10 +65,10 @@ func SecurityHeaders(p Policy) Middleware {
 	}
 	formAction := selfPlus(p.FormActions)
 
-	// img-src is 'self' plus the bucket and nothing else. A product image is always
-	// bytes this store holds — an object in the bucket, or a file served from this
-	// origin — because pasting a URL from the general internet means the picture on a
-	// product page belongs to somebody who can change or delete it. That used to be
+	// img-src is 'self' plus the bucket and nothing else. An event image is always
+	// bytes this server holds — an object in the bucket, or a file served from this
+	// origin — because pasting a URL from the general internet means the picture on an
+	// event page belongs to somebody who can change or delete it. That used to be
 	// allowed and no longer is, which is what lets this directive be closed.
 	//
 	// Every directive is now closed to this origin plus, for images, the bucket.
@@ -91,10 +91,10 @@ func SecurityHeaders(p Policy) Middleware {
 	// for the whole origin, and the browser cannot tell an intended inline block from
 	// an injected one — which is the entire threat it exists to stop. On script-src it
 	// would turn any future escaping slip into a live compromise of the admin session:
-	// customer-typed text reaches an authenticated page (the address in
-	// admin_order.gohtml), html/template is what keeps it inert, and this directive is
+	// registrant-typed text reaches an authenticated page (the answers in
+	// admin_registration.gohtml), html/template is what keeps it inert, and this directive is
 	// the backstop for the day something returns template.HTML without escaping first.
-	// A nonce keeps that backstop while still letting the store's own inline content
+	// A nonce keeps that backstop while still letting the site's own inline content
 	// run: fresh random value per response, in the header and on the tag, unguessable
 	// by an injection.
 	//
@@ -117,7 +117,7 @@ func SecurityHeaders(p Policy) Middleware {
 	// Two things that look like they need it and do not: styling set through the CSSOM
 	// (element.style.x, sheet.insertRule) is not covered by CSP at all, and hx-on /
 	// js: filters need 'unsafe-eval' rather than 'unsafe-inline' — which is why the
-	// store's htmx-driven code lives in .js files under STATIC_DIR instead.
+	// site's htmx-driven code lives in .js files under STATIC_DIR instead.
 	imgSrc := selfPlus(p.ImgSources)
 
 	// font-src is stated rather than left to default-src, even when it is only
@@ -146,8 +146,8 @@ func SecurityHeaders(p Policy) Middleware {
 			h.Set("Content-Security-Policy", csp)
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			// Nothing here uses a camera, a microphone or a location, and a store
-			// that takes card details should not be able to start doing so through
+			// Nothing here uses a camera, a microphone or a location, and a site
+			// that takes payments should not be able to start doing so through
 			// an injected iframe.
 			h.Set("Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=()")
 			if p.HSTS {
@@ -164,7 +164,7 @@ func SecurityHeaders(p Policy) Middleware {
 // selfPlus builds a CSP source list: this origin, then whatever else is allowed.
 //
 // 'self' is never dropped. Every directive built this way covers something the
-// store also serves itself — its own stylesheet, its own images — so an operator
+// server also serves itself — its own stylesheet, its own images — so an operator
 // naming an external origin is adding to the list, never replacing it.
 func selfPlus(extra []string) string {
 	if len(extra) == 0 {
@@ -175,7 +175,7 @@ func selfPlus(extra []string) string {
 
 // CORS allows the listed origins to fetch a handler cross-origin.
 //
-// It belongs only on the read-only, cookie-free catalog routes. Nothing it
+// It belongs only on read-only, cookie-free routes. Nothing it
 // guards may depend on a cookie or change state: no credentials are allowed, so
 // a permissive origin list here cannot become a way to act as somebody.
 func CORS(allowedOrigins []string) Middleware {

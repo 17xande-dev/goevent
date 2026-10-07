@@ -1,4 +1,4 @@
-// Package handler renders the store's HTML: full pages and the fragments htmx
+// Package handler renders the site's HTML: full pages and the fragments htmx
 // swaps into them.
 package handler
 
@@ -31,8 +31,8 @@ var templatesFS embed.FS
 //   - layouts/  one file per layout, each defining "layout" — which is why they can
 //     never share a set, and why this is a per-page-set design rather than one set
 //     with a flag on it.
-//   - partials/ parsed into every set: the <head>, the CSRF field, the product grid.
-//   - pages/    the storefront and the sign-in page, wrapped in layouts/public.
+//   - partials/ parsed into every set: the <head>, the CSRF field, the question fields.
+//   - pages/    the public event pages and the sign-in page, wrapped in layouts/public.
 //   - admin/    everything behind RequireAdmin, wrapped in layouts/admin.
 //   - mail/     rendered with no layout at all; a message is not a page.
 const (
@@ -50,9 +50,9 @@ var pageDirs = []struct{ dir, layout string }{
 	{"templates/mail", ""},
 }
 
-// A page's file name is the name handlers render it by: templates/pages/cart.gohtml
-// is "cart". That is why the admin files keep their admin_ prefix — the names live
-// in one flat namespace as far as a handler is concerned, and a second products.gohtml
+// A page's file name is the name handlers render it by: templates/pages/event.gohtml
+// is "event". That is why the admin files keep their admin_ prefix — the names live
+// in one flat namespace as far as a handler is concerned, and a second events.gohtml
 // under admin/ would be a boot-time collision rather than a helpful shorthand.
 
 // target is where one renderable name lives: which set holds it, and which template
@@ -68,8 +68,8 @@ type target struct {
 // files from an override directory layered on top of each.
 //
 // One set per page is what makes a definition local. A "nav_extra" in
-// pages/products.gohtml overrides the empty block in layouts/public.gohtml on the
-// catalog and on no other page, because no other page's set ever sees that file.
+// pages/events.gohtml overrides the empty block in layouts/public.gohtml on the
+// event list and on no other page, because no other page's set ever sees that file.
 // The cost is that a name is no longer visible everywhere: a page can only call a
 // partial, its own layout, or something it defines itself, and a call to anything
 // else is a failed render rather than a parse error — Go resolves template names at
@@ -79,8 +79,8 @@ type target struct {
 // The text set is separate and stays flat, because email needs both halves of a
 // message and they must not be escaped the same way. Pages and HTML mail parts go
 // through html/template, which escapes; the plain-text mail part goes through
-// text/template, which does not — running a receipt through the HTML escaper would
-// put `&amp;` in front of a customer.
+// text/template, which does not — running a confirmation through the HTML escaper
+// would put `&amp;` in front of a registrant.
 type Templates struct {
 	// mu guards the sets, which reload replaces on the fly.
 	mu     sync.RWMutex
@@ -97,7 +97,7 @@ type Templates struct {
 // ParseTemplates parses the embedded defaults and then, when overrideDir is set,
 // re-parses same-*pathed* files from that directory over them — a later definition
 // of a template name replaces an earlier one, and the path is what pairs an
-// override with the default it replaces. Adopters restyle the store by dropping
+// override with the default it replaces. Adopters restyle the site by dropping
 // files into a directory shaped like templates/ instead of forking the project.
 //
 // A file under a path the defaults do not have is ignored rather than refused: a
@@ -108,7 +108,7 @@ type Templates struct {
 // rebuild — unless SetReload has been called, which is what the development
 // stack does so that a refresh is enough.
 //
-// images resolves a product's image key to the URL it is served at. It is the
+// images resolves an event's image key to the URL it is served at. It is the
 // storage backend, so a template can render an image without the row having
 // recorded where the bytes happen to live today.
 func ParseTemplates(overrideDir string, images blob.Storage) (*Templates, error) {

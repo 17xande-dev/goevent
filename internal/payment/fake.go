@@ -16,12 +16,12 @@ var ErrFakeRejected = errors.New("payment: fake gateway rejected the callback")
 
 // Fake is a Gateway for tests. It exists in this package, next to the interface,
 // for the same reason email.Sender's fake will: the handler and store tests need
-// to exercise the whole payment path — a pending order becoming paid, stock
-// moving, a replay being ignored — without a network call to a payment provider
-// or a set of credentials in CI.
+// to exercise the whole payment path — a pending registration becoming paid,
+// seats moving, a replay being ignored — without a network call to a payment
+// provider or a set of credentials in CI.
 //
 // It is not wired into the server. Nothing in cmd or main constructs one, and
-// there is no configuration value that selects it: a store that silently took no
+// there is no configuration value that selects it: a site that silently took no
 // money would be worse than one that refuses to start.
 type Fake struct {
 	// Reject makes ParseCallback fail, standing in for a bad signature, a
@@ -52,7 +52,7 @@ func (f *Fake) Name() string { return f.name }
 
 func (f *Fake) Label() string { return f.label }
 
-// Currency matches the store's default so a test config needs no adjusting.
+// Currency matches the server's default so a test config needs no adjusting.
 func (f *Fake) Currency() string { return "ZAR" }
 
 func (f *Fake) CSP() CSPOrigins {

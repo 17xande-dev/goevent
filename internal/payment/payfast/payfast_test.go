@@ -149,7 +149,7 @@ func TestPayFast_HandoverOmitsBlankFields(t *testing.T) {
 	g := testGateway(t, nil)
 
 	req := testRequest()
-	req.NameLast = "" // a shopper with a one-word name
+	req.NameLast = "" // a registrant with a one-word name
 	h, err := g.Handover(req)
 	fields := h.Fields
 	if err != nil {
@@ -270,7 +270,7 @@ func isValidUTF8(s string) bool {
 
 func TestPayFast_NewRequiresConfiguration(t *testing.T) {
 	// Every one of these is checked at startup rather than at the first checkout,
-	// because the first checkout is a real shopper.
+	// because the first checkout is a real registrant.
 	cases := map[string]func(*Config){
 		"no merchant id":  func(c *Config) { c.MerchantID = "" },
 		"no merchant key": func(c *Config) { c.MerchantKey = "" },

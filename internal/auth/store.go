@@ -196,7 +196,7 @@ func (s *Store) List(ctx context.Context) ([]User, error) {
 }
 
 // Count is the boot check behind the setup flow: zero means nobody has claimed
-// this store yet.
+// this site yet.
 func (s *Store) Count(ctx context.Context) (int, error) {
 	n, err := s.q.CountAdminUsers(ctx)
 	if err != nil {
@@ -486,7 +486,7 @@ func (s *Store) ClaimSetup(ctx context.Context, token, email, name, passwordHash
 		return User{}, translate(fmt.Errorf("auth: consume setup token: %w", err))
 	}
 	if rows == 0 {
-		// Somebody else claimed the store between the read above and here.
+		// Somebody else claimed the site between the read above and here.
 		return User{}, ErrSetupClosed
 	}
 
@@ -515,7 +515,7 @@ func (s *Store) ClaimSetup(ctx context.Context, token, email, name, passwordHash
 	return u, nil
 }
 
-// ErrSetupClosed means the store has already been claimed. It is permanent: the
+// ErrSetupClosed means the site has already been claimed. It is permanent: the
 // consumed timestamp is never cleared, so setup does not reopen on a restart or
 // if every account is later disabled.
 var ErrSetupClosed = errors.New("auth: setup has already been completed")

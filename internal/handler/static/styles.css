@@ -24,7 +24,7 @@
  */
 
 :root {
-  /* Palette. Deliberately neutral: this is an open-source store and a default
+  /* Palette. Deliberately neutral: this is an open-source project and a default
      nobody has branded yet. Ink on paper, one accent for actions. */
   --paper: #ffffff;
   --paper-sunk: #f6f6f4;
@@ -144,7 +144,7 @@ body {
 }
 
 /* --- Your account in the header --------------------------------------------
-   The admin header and the storefront share one account menu
+   The admin header and the public pages share one account menu
    (partials/account.gohtml): an icon, a tooltip, and a dropdown. */
 
 .profile-icon {
@@ -368,101 +368,6 @@ pre {
   font-size: var(--text-small);
 }
 
-/* The raw gateway notification on an order page: a long unbroken query string that
-   has to wrap somewhere. This lived as an inline style attribute until there was a
-   stylesheet to put it in — which is what let style-src drop 'unsafe-inline'. */
-pre.raw {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--paper-sunk);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: var(--gap);
-  margin-block: 0 var(--gap);
-}
-
-/* --- Search and filtering ------------------------------------------------ */
-
-/* The filter form sits outside the swapped results, so it keeps its text and its
-   cursor while the grid under it changes. */
-.filters {
-  margin-block-end: var(--gap-md);
-}
-
-.filters .search {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-sm);
-  align-items: center;
-}
-
-.filters .search label {
-  flex: 1 1 14rem;
-}
-
-.filters input[type="search"] {
-  width: 100%;
-}
-
-/* Wrapping rather than scrolling: a shop with a dozen categories should show them
-   all, and a horizontal scroller hides the ones at the end. */
-.filters .categories {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-sm) var(--gap);
-  align-items: center;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: var(--gap-sm) var(--gap);
-  margin-block-start: var(--gap-sm);
-}
-
-.filters .categories legend {
-  font-size: var(--text-small);
-  color: var(--ink-soft);
-  padding-inline: var(--gap-xs);
-}
-
-.filters .categories label {
-  display: inline-flex;
-  gap: var(--gap-xs);
-  align-items: center;
-  white-space: nowrap;
-}
-
-/* --- Pagination ---------------------------------------------------------- */
-
-.pager {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-xs);
-  align-items: center;
-  margin-block-start: var(--gap-lg);
-}
-
-.pager a,
-.pager .current {
-  display: inline-block;
-  min-width: 2.25rem;
-  padding: var(--gap-xs) var(--gap-sm);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  text-align: center;
-  text-decoration: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.pager .current {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.count {
-  font-size: var(--text-small);
-  margin-block-start: var(--gap-sm);
-}
-
 .see-all {
   margin-block-start: var(--gap-md);
 }
@@ -492,14 +397,6 @@ pre.raw {
 .error-page .lede,
 .not-found .lede {
   margin-inline: auto;
-}
-
-.not-found .filters {
-  margin-block: var(--gap-md);
-}
-
-.not-found .search {
-  justify-content: center;
 }
 
 .error-page .reference {
@@ -533,7 +430,7 @@ pre.raw {
 }
 
 /* The index page's opening line. Slightly larger than body text and nothing else,
-   because the line itself is meant to be replaced and a shop's own words should
+   because the line itself is meant to be replaced and an organisation's own words should
    not have to fight a style that assumed what they would be. */
 .lede {
   font-size: var(--text-large);
@@ -628,7 +525,7 @@ pre.raw {
     background: color-mix(in oklab, var(--warn) 8%, var(--paper-sunk));
   }
 
-  /* The state worth noticing on a list of orders: this one took money. */
+  /* The state worth noticing on a list of registrations: this one took money. */
   &.done {
     color: var(--accent);
     background: color-mix(in oklab, var(--accent) 8%, var(--paper-sunk));
@@ -745,10 +642,9 @@ label {
   color: var(--ink-soft);
   margin-block-end: var(--gap-xs);
 
-  /* An inline label — a checkbox, or one of the admin's compact variant rows —
-     should not become a block and push its control onto the next line. */
-  &:has(> input[type="checkbox"]),
-  &.inline {
+  /* An inline label — a checkbox — should not become a block and push its
+     control onto the next line. */
+  &:has(> input[type="checkbox"]) {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
@@ -807,8 +703,8 @@ button,
     outline-offset: 2px;
   }
 
-  /* The secondary treatment, for the destructive and the incidental: remove a line,
-     delete a variant, sign out. */
+  /* The secondary treatment, for the destructive and the incidental: remove an image,
+     delete an event, sign out. */
   &.quiet {
     background: transparent;
     color: var(--ink-soft);
@@ -886,7 +782,7 @@ button,
   }
 }
 
-/* Fields that belong on one line: a variant's SKU, options, price and stock.
+/* Fields that belong on one line: a ticket type's price, capacity and limit.
    Each control keeps the width its `size` attribute asks for and the row wraps
    rather than overflowing; aligning on the end edge puts the inputs on a shared
    baseline whether or not a field has a label above it. */
@@ -907,7 +803,7 @@ button,
 }
 
 /* A set of tick boxes read as a list rather than a column of blocks:
-   categories on a product, variants on a file. */
+   the ticket types a question is asked for. */
 .checks {
   display: flex;
   flex-wrap: wrap;
@@ -938,8 +834,8 @@ button,
   }
 }
 
-/* A table of key and value rather than of columns — the payment facts on an
-   order. The keys are labels, not data, so they get a fixed column and the
+/* A table of key and value rather than of columns — the payment facts on a
+   registration. The keys are labels, not data, so they get a fixed column and the
    values line up down the page. */
 .facts {
   max-width: 44rem;
@@ -1002,7 +898,7 @@ button,
   margin-block-end: var(--gap);
 
   /* A notice that runs to several paragraphs — the oversold explanation on an
-     order — should not carry a paragraph gap inside its own padding. */
+     event — should not carry a paragraph gap inside its own padding. */
   > :last-child {
     margin-block-end: 0;
   }
@@ -1012,7 +908,7 @@ button,
   }
 }
 
-/* --- Tables: the cart, the admin lists ----------------------------------- */
+/* --- Tables: the admin lists --------------------------------------------- */
 
 table {
   width: 100%;

@@ -73,7 +73,7 @@ func TestRequestID(t *testing.T) {
 				}
 			}
 			// The response always names the request, whether the id was adopted or
-			// minted: it is what a customer can quote back.
+			// minted: it is what a visitor can quote back.
 			if got := rec.Header().Get(Header); got != seen {
 				t.Errorf("echoed %q but the handler saw %q", got, seen)
 			}

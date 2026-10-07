@@ -17,12 +17,12 @@ const validIP = "197.97.145.150"
 // itnFieldsFor returns the fields of a notification in the order PayFast sends
 // them, including the empty ones — which matters, because those are part of the
 // signature on the way in.
-func itnFieldsFor(orderID string, amount string) []payment.Field {
+func itnFieldsFor(paymentID string, amount string) []payment.Field {
 	return []payment.Field{
-		{Name: "m_payment_id", Value: orderID},
+		{Name: "m_payment_id", Value: paymentID},
 		{Name: "pf_payment_id", Value: "1089250"},
 		{Name: "payment_status", Value: StatusComplete},
-		{Name: "item_name", Value: "Test Store order 3F2504E0"},
+		{Name: "item_name", Value: "Family Camp 2026 K7Q-4MZ"},
 		{Name: "item_description", Value: ""}, // deliberately empty
 		{Name: "amount_gross", Value: amount},
 		{Name: "amount_fee", Value: "-6.90"},
@@ -76,8 +76,8 @@ func TestITN_ValidNotification(t *testing.T) {
 	validate, received := validatorSaying(t, "VALID")
 	g := testGateway(t, func(c *Config) { c.ValidateURL = validate })
 
-	orderID := "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
-	fields := itnFieldsFor(orderID, "299.00")
+	paymentID := "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+	fields := itnFieldsFor(paymentID, "299.00")
 	body := encodeITN(fields, g.cfg.Passphrase)
 
 	cb, err := g.ParseCallback(t.Context(), notify(body, validIP))
@@ -85,8 +85,8 @@ func TestITN_ValidNotification(t *testing.T) {
 		t.Fatalf("ParseCallback: %v", err)
 	}
 
-	if cb.PaymentID != orderID {
-		t.Errorf("OrderID = %q, want %q", cb.PaymentID, orderID)
+	if cb.PaymentID != paymentID {
+		t.Errorf("PaymentID = %q, want %q", cb.PaymentID, paymentID)
 	}
 	if cb.Ref != "1089250" {
 		t.Errorf("Ref = %q, want the pf_payment_id", cb.Ref)
@@ -328,7 +328,7 @@ func TestITN_RejectsMalformedBodies(t *testing.T) {
 	}
 
 	// A well-signed notification whose amount is not a plain amount: the figure is
-	// compared against an order total, so anything unparseable has to be a refusal
+	// compared against a payment's amount, so anything unparseable has to be a refusal
 	// rather than a zero.
 	fields := itnFieldsFor("3f2504e0-4f89-41d3-9a0c-0305e82c3301", "R 299,00")
 	if _, err := g.ParseCallback(t.Context(), notify(encodeITN(fields, g.cfg.Passphrase), validIP)); !errors.Is(err, ErrMalformed) {

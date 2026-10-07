@@ -13,7 +13,7 @@ import (
 // switched on. Tests turn one off rather than building a config from scratch.
 func gatewayConfig() config.Config {
 	return config.Config{
-		BaseURL:  "https://store.example",
+		BaseURL:  "https://events.example",
 		Currency: "ZAR",
 		PayFast: config.PayFast{
 			MerchantID:  "10000100",
@@ -79,7 +79,7 @@ func TestNewGateways_AllowsNoGatewayAtAll(t *testing.T) {
 }
 
 // Both providers settle in ZAR only. Discovering that at the first checkout,
-// after an order row already exists, is worse than discovering it at boot.
+// after a registration row already exists, is worse than discovering it at boot.
 func TestNewGateways_RefusesAMismatchedCurrency(t *testing.T) {
 	for name, edit := range map[string]func(*config.Config){
 		"payfast":  func(c *config.Config) { c.SnapScan = config.SnapScan{} },
@@ -128,7 +128,7 @@ func TestNewGateways_DeclareTheirCSPOrigins(t *testing.T) {
 		}
 	}
 
-	// And a store without SnapScan adds nothing to img-src, so the policy stays as
+	// And a site without SnapScan adds nothing to img-src, so the policy stays as
 	// tight as its deployment allows.
 	cfg := gatewayConfig()
 	cfg.SnapScan = config.SnapScan{}
@@ -137,6 +137,6 @@ func TestNewGateways_DeclareTheirCSPOrigins(t *testing.T) {
 		t.Fatalf("newGateways: %v", err)
 	}
 	if _, images := payfastOnly.CSP(); len(images) != 0 {
-		t.Errorf("img-src = %q for a store with no QR gateway", images)
+		t.Errorf("img-src = %q for a site with no QR gateway", images)
 	}
 }

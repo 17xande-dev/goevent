@@ -47,7 +47,7 @@ type Params struct {
 
 // DefaultParams is RFC 9106's second recommended configuration: 64 MiB, three
 // passes, four lanes. It costs on the order of a tenth of a second and 64 MiB per
-// verification, which is affordable because this store has one admin, logs in
+// verification, which is affordable because this site has few admins, logs in
 // rarely, and — since the hardening phase — rate-limits the attempt.
 //
 // The parameters are encoded in the hash, so raising them later needs no

@@ -25,9 +25,10 @@ import (
 //
 //   - **Admin login.** Brute force. The argon2id verification already costs real
 //     time, but cost is not a limit.
-//   - **Checkout.** Order-row spam. Refusing is a nuisance to a real shopper, so
+//   - **Registration.** Registration-row spam. Refusing is a nuisance to a real
+//     registrant, so
 //     the limit is loose enough that nobody hits it by clicking twice.
-//   - **The payment callback.** Unauthenticated, and every request makes the store
+//   - **The payment callback.** Unauthenticated, and every request makes the server
 //     POST to the gateway to validate it — an amplifier. This one is the reason a
 //     limit exists at all.
 //
@@ -36,7 +37,7 @@ import (
 // forged. A *throttled* request is the opposite case: it has not been looked at,
 // and it must be retried. So the limiter answers 429 with Retry-After, and because
 // it sits in front of the handler, the gateway retries as it should. "Always 200"
-// applies to notifications the store has actually read.
+// applies to notifications the server has actually read.
 
 // RateLimitConfig is one limiter's settings.
 type RateLimitConfig struct {
@@ -57,7 +58,7 @@ type RateLimitConfig struct {
 	TTL time.Duration
 
 	// Exceeded answers a throttled request. It is supplied rather than built here
-	// because rendering the store's error page is the handler package's job and
+	// because rendering the site's error page is the handler package's job and
 	// this package cannot import it — and because the payment gateway, which is
 	// also throttled, wants a bare answer rather than a page.
 	//

@@ -183,8 +183,8 @@ func TestParseCallback_SignatureCoversTheRawBody(t *testing.T) {
 }
 
 // The whole argument for the API call: what the notification says is not what the
-// store acts on. A body claiming a completed payment against an API that says
-// pending must not pay an order.
+// server acts on. A body claiming a completed payment against an API that says
+// pending must not pay a registration.
 func TestParseCallback_BelievesTheAPIAndNotTheNotification(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(func(p map[string]any) {
 		p["status"] = StatusPending
@@ -197,14 +197,14 @@ func TestParseCallback_BelievesTheAPIAndNotTheNotification(t *testing.T) {
 		t.Fatalf("ParseCallback: %v", err)
 	}
 	if cb.Paid() {
-		t.Error("a notification claiming completed paid an order SnapScan calls pending")
+		t.Error("a notification claiming completed paid a registration SnapScan calls pending")
 	}
 	if cb.Status != StatusPending {
 		t.Errorf("Status = %q, want the API's word", cb.Status)
 	}
 }
 
-// Likewise the amount: a forged body cannot talk the store into crediting more
+// Likewise the amount: a forged body cannot talk the server into crediting more
 // than SnapScan says was taken.
 func TestParseCallback_TakesTheAmountFromTheAPI(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(nil)) // requiredAmount 12550
@@ -223,9 +223,9 @@ func TestParseCallback_TakesTheAmountFromTheAPI(t *testing.T) {
 	}
 }
 
-// A tip makes totalAmount larger than what the store asked for. Matching on
+// A tip makes totalAmount larger than what the server asked for. Matching on
 // totalAmount would fail the handler's equality check on a perfectly good payment
-// — a customer's generosity reading as a mismatched amount.
+// — a registrant's generosity reading as a mismatched amount.
 func TestParseCallback_IgnoresATip(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(func(p map[string]any) {
 		p["tipAmount"] = 1000
@@ -242,7 +242,7 @@ func TestParseCallback_IgnoresATip(t *testing.T) {
 	}
 }
 
-// Every QR this store builds carries an amount, so a payment without one was made
+// Every QR this server builds carries an amount, so a payment without one was made
 // against somebody else's code.
 func TestParseCallback_RejectsAPaymentWithNoRequiredAmount(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(func(p map[string]any) {
@@ -256,8 +256,8 @@ func TestParseCallback_RejectsAPaymentWithNoRequiredAmount(t *testing.T) {
 	}
 }
 
-// Two stores sharing one deployment's configuration is the realistic version of
-// this, and it would otherwise credit orders here against payments made there.
+// Two sites sharing one deployment's configuration is the realistic version of
+// this, and it would otherwise credit registrations here against payments made there.
 func TestParseCallback_RejectsAnotherMerchantsSnapCode(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(func(p map[string]any) {
 		p["snapCode"] = "someoneelse"
@@ -271,7 +271,7 @@ func TestParseCallback_RejectsAnotherMerchantsSnapCode(t *testing.T) {
 }
 
 // A refund arriving down the payment webhook would otherwise read as a payment and
-// credit an order for money going the other way.
+// credit a registration for money going the other way.
 func TestParseCallback_RejectsARefund(t *testing.T) {
 	base, _ := apiSaying(t, http.StatusOK, paymentJSON(func(p map[string]any) {
 		p["transactionType"] = "refund"

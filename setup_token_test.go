@@ -13,7 +13,7 @@ import (
 
 // captureLogger records what the boot path logged, because for the generated
 // token the log line *is* the delivery mechanism: an operator who cannot find it
-// cannot claim the store.
+// cannot claim the site.
 func captureLogger() (*slog.Logger, *bytes.Buffer) {
 	var buf bytes.Buffer
 	return slog.New(slog.NewJSONHandler(&buf, nil)), &buf
@@ -112,7 +112,7 @@ func TestEnsureSetupToken_KeepsAnUnclaimedToken(t *testing.T) {
 	}
 }
 
-// A claimed store issues nothing, on this boot or any later one. That is what
+// A claimed site issues nothing, on this boot or any later one. That is what
 // makes the bootstrap a one-time event rather than a door that reopens.
 func TestEnsureSetupToken_IssuesNothingOnAClaimedStore(t *testing.T) {
 	users := auth.NewStore(dbtest.Pool(t))
@@ -128,7 +128,7 @@ func TestEnsureSetupToken_IssuesNothingOnAClaimedStore(t *testing.T) {
 		t.Fatalf("ensureSetupToken: %v", err)
 	}
 	if buf.Len() != 0 {
-		t.Errorf("a claimed store logged %s", buf.String())
+		t.Errorf("a claimed site logged %s", buf.String())
 	}
 	if pending, err := users.SetupPending(ctx); err != nil || pending {
 		t.Errorf("SetupPending = %v, %v, want false", pending, err)
@@ -164,7 +164,7 @@ func TestEnsureSetupToken_SaysWhenASuppliedTokenIsIgnored(t *testing.T) {
 	if strings.Contains(buf.String(), supplied) {
 		t.Errorf("SETUP_TOKEN was written to the log: %s", buf.String())
 	}
-	// And the truth of it: the generated token still claims the store, the
+	// And the truth of it: the generated token still claims the site, the
 	// supplied one does not.
 	if ok, err := users.CheckSetupToken(ctx, generated); err != nil || !ok {
 		t.Errorf("the issued token stopped working: %v, %v", ok, err)

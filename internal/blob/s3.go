@@ -67,10 +67,11 @@ type S3Config struct {
 
 // NewS3 validates the configuration and returns Storage.
 //
-// It does not connect and does not check the bucket exists. A store whose object
-// storage is misconfigured should still sell things — the catalog, cart, checkout
-// and payment path do not touch this — so the failure belongs at the first upload,
-// where exactly one operator sees it, and not at boot where it stops the shop.
+// It does not connect and does not check the bucket exists. A deployment whose
+// object storage is misconfigured should still take registrations — the event
+// pages, registration and payment path do not touch this — so the failure belongs
+// at the first upload, where exactly one operator sees it, and not at boot where it
+// stops the site.
 func NewS3(cfg S3Config) (*S3, error) {
 	var missing []string
 	for _, f := range []struct{ name, value string }{
@@ -110,9 +111,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 	}, nil
 }
 
-// newMinioClient builds the client both the public and the private store use.
-// Shared so that a change to how this project talks to a bucket — the region
-// default, the credential type — cannot apply to images and not to downloads.
+// newMinioClient builds the bucket client NewS3 uses.
 func newMinioClient(cfg S3Config) (*minio.Client, error) {
 	region := cfg.Region
 	if region == "" {

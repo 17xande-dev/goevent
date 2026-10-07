@@ -201,7 +201,7 @@ func TestRequestID_IsEchoedAndShownOnTheErrorPage(t *testing.T) {
 		t.Fatal("no request id was echoed")
 	}
 	// The page and the header must name the same request, or the reference a
-	// customer quotes leads nowhere.
+	// visitor quotes leads nowhere.
 	if !strings.Contains(body, id) {
 		t.Errorf("the page does not carry the id %q it was served under", id)
 	}

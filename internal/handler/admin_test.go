@@ -350,8 +350,8 @@ func withToken(t *testing.T, srv *httptest.Server, form url.Values) url.Values {
 // submitted token against the client's cookie, so any token issued to this jar
 // works for any later request from it.
 //
-// Which page depends on the store's state: the login form redirects away once
-// the client is signed in and once nobody has claimed the store yet, and the
+// Which page depends on the site's state: the login form redirects away once
+// the client is signed in and once nobody has claimed the site yet, and the
 // setup page exists only in that second case. Your own password form is the
 // third, for a signed-in client — it is the one admin page every role can open,
 // including an account being forced to change its password, which is bounced

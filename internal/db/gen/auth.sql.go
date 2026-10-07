@@ -39,7 +39,7 @@ SELECT count(*) FROM admin_users
 // `SELECT *` is deliberate on the single-table queries: sqlc expands it against
 // the real schema at generation time, so the column list in the generated code
 // cannot drift from the table the way a hand-maintained one could.
-// The boot check behind the setup flow: zero means nobody has claimed the store.
+// The boot check behind the setup flow: zero means nobody has claimed the site.
 func (q *Queries) CountAdminUsers(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countAdminUsers)
 	var count int64
@@ -326,7 +326,7 @@ SELECT pg_advisory_xact_lock($1)
 // A transaction-scoped advisory lock is the fix rather than SERIALIZABLE, which
 // would need retry logic on serialisation failure at every call site, or
 // SELECT ... FOR UPDATE over the owner rows, which needs a consistent lock order
-// to avoid deadlocking. These operations happen a handful of times in a store's
+// to avoid deadlocking. These operations happen a handful of times in a site's
 // life, so serialising them globally costs nothing. The same reasoning and shape
 // as db.go's migration lock.
 func (q *Queries) LockOwnerGuard(ctx context.Context, pgAdvisoryXactLock int64) error {
@@ -422,7 +422,7 @@ SELECT EXISTS (
 )
 `
 
-// Whether the store is still claimable, by exactly the conditions ConsumeSetupToken
+// Whether the site is still claimable, by exactly the conditions ConsumeSetupToken
 // enforces. Asking "is consumed_at NULL" alone is not the same question: if a first
 // account ever arrives by some path other than the claim flow — a seed command, a
 // manual INSERT, a recovery CLI — the token stays unconsumed for ever, and a setup

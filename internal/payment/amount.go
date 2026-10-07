@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// A gateway talks about money in decimal strings; this store talks about it in
+// A gateway talks about money in decimal strings; this server talks about it in
 // integer cents. These two functions are the only place the conversion happens,
 // and they are here rather than in a gateway package because every gateway needs
 // exactly the same thing — and because the format a gateway is sent must not
@@ -28,7 +28,7 @@ func FormatAmount(cents int64) string {
 
 // ParseAmount parses a gateway amount string into cents. It is deliberately
 // strict — digits, and at most two decimal places — because this figure is
-// compared against an order total to decide whether the right amount was paid,
+// compared against a payment's amount to decide whether the right amount was paid,
 // and a lenient parser there turns a mismatch into a silent acceptance.
 func ParseAmount(s string) (int64, error) {
 	s = strings.TrimSpace(s)

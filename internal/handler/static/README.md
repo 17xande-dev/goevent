@@ -1,6 +1,6 @@
 # Vendored static assets
 
-Served from the binary by `go:embed`, not from a CDN — so the store works offline, the
+Served from the binary by `go:embed`, not from a CDN — so the site works offline, the
 Content-Security-Policy stays `'self'`, and no third-party origin sits anywhere near the
 payment path.
 
@@ -35,8 +35,8 @@ and licences left in this directory stay unreachable unless they are named there
 
 ## logo.svg and placeholder.svg
 
-Ours, not vendored, and deliberately generic: the logo is an abstract carrier bag
-with no text, because the store's name comes from `STORE_NAME` and a name baked into
+Ours, not vendored, and deliberately generic: the logo is an abstract admission ticket
+with no text, because the site's name comes from `SITE_NAME` and a name baked into
 a logo would be wrong for every adopter but one. Both use `currentColor` or flat
 greys so they work on a light or dark page without a second file.
 

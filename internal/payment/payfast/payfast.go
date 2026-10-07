@@ -1,8 +1,8 @@
 // Package payfast implements payment.Gateway for PayFast, the gateway most South
-// African stores use.
+// African merchants use.
 //
 // There is no PayFast SDK for Go, and this package is deliberately not one: it
-// covers exactly the two directions this store needs — sending a shopper to pay,
+// covers exactly the two directions this server needs — sending a registrant to pay,
 // and authenticating the notification that comes back — over about three hundred
 // lines of net/http. The spec is at https://developers.payfast.co.za.
 //
@@ -47,12 +47,12 @@ import (
 const Currency = "ZAR"
 
 // MinAmountCents is PayFast's documented minimum transaction. Enforcing it here
-// turns a rejection on the gateway's own page — after a pending order already
-// exists — into a message on the checkout form.
+// turns a rejection on the gateway's own page — after a pending registration
+// already exists — into a message on the registration form.
 const MinAmountCents = 500
 
 // itemNameMaxLen is PayFast's limit on item_name. A longer value is truncated
-// rather than rejected: the description is cosmetic, and refusing a sale over it
+// rather than rejected: the description is cosmetic, and refusing a payment over it
 // would be absurd.
 const itemNameMaxLen = 100
 
@@ -110,7 +110,7 @@ type Config struct {
 	// so testing against it otherwise fails on a check that is not the one being
 	// tested. It is logged loudly at startup, and it is never right in
 	// production: the check is one of the four things standing between a forged
-	// notification and a fulfilled order.
+	// notification and a confirmed registration.
 	AllowAnySourceIP bool
 
 	// HTTPClient is used for the server-to-server validation call. A nil client
@@ -137,7 +137,7 @@ type Gateway struct {
 
 // New validates the configuration and returns a gateway. Everything it can check
 // up front it checks at startup, because the first time this configuration is
-// otherwise exercised is a real shopper trying to pay.
+// otherwise exercised is a real registrant trying to pay.
 func New(cfg Config) (*Gateway, error) {
 	var missing []string
 	for _, f := range []struct{ name, value string }{
@@ -239,7 +239,7 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 		return payment.Handover{}, ErrAmount
 	}
 	if r.PaymentID == "" {
-		return payment.Handover{}, errors.New("payfast: request has no order id")
+		return payment.Handover{}, errors.New("payfast: request has no payment id")
 	}
 
 	fields := make([]payment.Field, 0, 12)
@@ -257,8 +257,8 @@ func (g *Gateway) Handover(r payment.Request) (payment.Handover, error) {
 	add("name_first", r.NameFirst)
 	add("name_last", r.NameLast)
 	add("email_address", r.Email)
-	// m_payment_id is our order id coming back on the notification, and the only
-	// thing that ties a payment to an order.
+	// m_payment_id is our payment id coming back on the notification, and the
+	// only thing that ties a gateway's payment to ours.
 	add("m_payment_id", r.PaymentID)
 	add("amount", payment.FormatAmount(r.AmountCents))
 	add("item_name", truncate(r.ItemName, itemNameMaxLen))

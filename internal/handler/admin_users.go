@@ -12,13 +12,13 @@ import (
 )
 
 // The administrator accounts. Plain POST-redirect-GET throughout, no htmx: these
-// pages are used a handful of times in a store's life, and a full page load after
+// pages are used a handful of times in a site's life, and a full page load after
 // each change is the clearest possible statement of what the account now is.
 //
 // Two rules run through the whole file:
 //
 //   - **Accounts are disabled, never deleted.** A removed row erases who did
-//     what, and the orders and products an administrator touched outlive their
+//     what, and the events and registrations an administrator touched outlive their
 //     employment.
 //   - **A refused action is absent, not broken.** Every guard below is mirrored
 //     in the template, so the button for something the server would turn down is

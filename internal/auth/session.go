@@ -30,8 +30,7 @@ import (
 )
 
 // CookieName is the admin session cookie. It is scoped to /admin by the handler
-// that sets it, so it is never sent with a storefront request and cannot leak
-// into the embeddable, deliberately cookie-free catalog fragments.
+// that sets it, so it is never sent with a request for the public event pages.
 const CookieName = "admin_session"
 
 // TokenBytes is how much randomness a session token carries. 32 bytes is the

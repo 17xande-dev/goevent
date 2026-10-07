@@ -91,7 +91,7 @@ func TestImageKey(t *testing.T) {
 	}
 
 	// A fresh key every time is what makes replacing an image work behind a CDN: a
-	// new URL rather than a cache purge this store cannot perform.
+	// new URL rather than a cache purge this server cannot perform.
 	seen := map[string]bool{}
 	for range 100 {
 		k, err := ImageKey(eventID, ".jpg")
@@ -121,7 +121,7 @@ func TestNewS3_ValidatesConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a valid configuration was rejected: %v", err)
 	}
-	if got, want := s.URL("products/x/ab.jpg"), "http://localhost:9000/goevent/products/x/ab.jpg"; got != want {
+	if got, want := s.URL("events/x/ab.jpg"), "http://localhost:9000/goevent/events/x/ab.jpg"; got != want {
 		t.Errorf("URL = %q, want %q", got, want)
 	}
 
@@ -182,17 +182,17 @@ func TestUnconfigured_RefusesEverything(t *testing.T) {
 func TestFake(t *testing.T) {
 	f := NewFake()
 
-	url, err := f.Put(t.Context(), "products/a/1.jpg", bytes.NewReader(jpegBytes), int64(len(jpegBytes)), "image/jpeg")
+	url, err := f.Put(t.Context(), "events/a/1.jpg", bytes.NewReader(jpegBytes), int64(len(jpegBytes)), "image/jpeg")
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if url != "https://images.example/products/a/1.jpg" {
+	if url != "https://images.example/events/a/1.jpg" {
 		t.Errorf("Put returned %q", url)
 	}
 
 	// The bytes stored are the bytes sent, which is what lets a handler test assert
 	// an upload arrived intact.
-	obj, ok := f.Get("products/a/1.jpg")
+	obj, ok := f.Get("events/a/1.jpg")
 	if !ok {
 		t.Fatal("the object was not stored")
 	}
@@ -203,16 +203,16 @@ func TestFake(t *testing.T) {
 		t.Errorf("ContentType = %q", obj.ContentType)
 	}
 
-	if err := f.Delete(t.Context(), "products/a/1.jpg"); err != nil {
+	if err := f.Delete(t.Context(), "events/a/1.jpg"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, ok := f.Get("products/a/1.jpg"); ok {
+	if _, ok := f.Get("events/a/1.jpg"); ok {
 		t.Error("the object survived Delete")
 	}
 	// Deletions are recorded separately from the map, so a test can assert a
 	// particular key was deleted rather than merely that it is absent — which it
 	// would also be if it had never existed.
-	if got := f.Deleted(); len(got) != 1 || got[0] != "products/a/1.jpg" {
+	if got := f.Deleted(); len(got) != 1 || got[0] != "events/a/1.jpg" {
 		t.Errorf("Deleted() = %v", got)
 	}
 
