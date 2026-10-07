@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
@@ -33,6 +35,33 @@ type checkinPage struct {
 }
 
 func checkinPath(eventID string) string { return eventPath(eventID) + "/checkin" }
+
+type checkinEventsPage struct {
+	page
+	Events []events.Event
+}
+
+// adminCheckinEvents is the door's front page: the events somebody might be
+// standing at a door for. Published or closed — closing stops registration, not
+// the event — and not over by more than a day, soonest first.
+func (h *Handler) adminCheckinEvents(w http.ResponseWriter, r *http.Request) {
+	all, err := h.events.List(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	since := time.Now().Add(-24 * time.Hour)
+	var open []events.Event
+	for _, e := range all {
+		if (e.Status == events.StatusPublished || e.Status == events.StatusClosed) && e.EndsAt.After(since) {
+			open = append(open, e)
+		}
+	}
+	slices.SortFunc(open, func(a, b events.Event) int { return a.StartsAt.Compare(b.StartsAt) })
+	h.render(w, r, http.StatusOK, "admin_checkin_events", checkinEventsPage{
+		page: h.newPage(r, "Check-in"), Events: open,
+	})
+}
 
 func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
 	e, ok := h.event(w, r)

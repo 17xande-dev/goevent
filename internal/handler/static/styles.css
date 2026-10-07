@@ -1120,3 +1120,13 @@ img {
   margin: 0;
   font-size: var(--text-large);
 }
+
+.door-events {
+  list-style: none;
+  padding: 0;
+
+  > li {
+    padding-block: var(--gap-sm);
+    border-block-end: 1px solid var(--rule);
+  }
+}

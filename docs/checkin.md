@@ -1,9 +1,11 @@
 # Check-in
 
 Each event has a door page at `/admin/events/{id}/checkin`, linked from the event's admin
-page. It needs the `checkin` permission, which every role except `viewer` holds. The
-`checkin` role exists for door volunteers: it can check people in and read the admin, and
-change nothing else. See [Admin and accounts](admin.md#roles).
+page and from `/admin/checkin`, which lists the events on now or coming up. Both need the
+`checkin` permission, which every role except `viewer` holds. The `checkin` role exists
+for door volunteers: it reaches these pages and its own account and nothing else, so a
+volunteer sees who is expected but not their registrations, and a reference on the door
+page is plain text rather than a link. See [Admin and accounts](admin.md#roles).
 
 ## Scanning
 

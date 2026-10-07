@@ -24,8 +24,10 @@ const (
 	// RoleManager runs events and registrations, and cannot reach the accounts
 	// pages.
 	RoleManager Role = "manager"
-	// RoleCheckin is a door volunteer: it can read the admin and check people
-	// in, and change nothing else.
+	// RoleCheckin is a door volunteer: the door page of each event and their own
+	// account, and nothing else. Like Planning Center's check-in volunteers, it
+	// sees who is expected at the door — names, tickets, references — but not the
+	// registrations behind them: no contact details, answers, payments or export.
 	RoleCheckin Role = "checkin"
 	// RoleViewer can read every admin page and change nothing.
 	RoleViewer Role = "viewer"
@@ -67,8 +69,12 @@ func (r Role) Label() string {
 type Permission string
 
 const (
-	// PermRead is every admin page that only displays. Every role holds it, so
-	// a route naming it is saying "any signed-in administrator".
+	// PermAccount is a signed-in administrator's own account: the profile page
+	// and the admin's front door. Every role holds it, so a route naming it is
+	// saying "any signed-in administrator".
+	PermAccount Permission = "account"
+	// PermRead is the event and registration pages that only display, the
+	// attendee export among them. Every role but checkin holds it.
 	PermRead Permission = "read"
 	// PermEventsWrite covers events, ticket types, questions and event images.
 	PermEventsWrite Permission = "events.write"
@@ -85,7 +91,7 @@ const (
 // Permissions is every permission there is, so that a caller handed one as a
 // string — a template asking Can, say — can tell a typo from a real name
 // instead of quietly getting "no".
-var Permissions = []Permission{PermRead, PermEventsWrite, PermRegistrationsWrite, PermCheckin, PermUsersWrite}
+var Permissions = []Permission{PermAccount, PermRead, PermEventsWrite, PermRegistrationsWrite, PermCheckin, PermUsersWrite}
 
 // Valid reports whether p is one of them.
 func (p Permission) Valid() bool {
@@ -100,21 +106,21 @@ func (p Permission) Valid() bool {
 // the routes it gates.
 var permissions = map[Role]map[Permission]bool{
 	RoleOwner: {
-		PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
+		PermAccount: true, PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
 		PermUsersWrite: true,
 	},
 	RoleAdmin: {
-		PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
+		PermAccount: true, PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
 		PermUsersWrite: true,
 	},
 	RoleManager: {
-		PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
+		PermAccount: true, PermRead: true, PermEventsWrite: true, PermRegistrationsWrite: true, PermCheckin: true,
 	},
 	RoleCheckin: {
-		PermRead: true, PermCheckin: true,
+		PermAccount: true, PermCheckin: true,
 	},
 	RoleViewer: {
-		PermRead: true,
+		PermAccount: true, PermRead: true,
 	},
 }
 

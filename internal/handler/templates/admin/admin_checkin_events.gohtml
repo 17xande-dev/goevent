@@ -1,0 +1,17 @@
+{{/*
+  The door's front page, and the whole admin for a check-in volunteer: which
+  event they are standing at the door of.
+*/}}
+{{define "content"}}
+<h1>Check-in</h1>
+{{if .Events}}
+<ul class="door-events">
+  {{range .Events}}
+  <li><a href="/admin/events/{{.ID}}/checkin"><strong>{{.Title}}</strong></a><br>
+    <small class="muted">{{.When}}{{with .Venue}} · {{.}}{{end}}</small></li>
+  {{end}}
+</ul>
+{{else}}
+<p class="muted">No events are on now or coming up.</p>
+{{end}}
+{{end}}

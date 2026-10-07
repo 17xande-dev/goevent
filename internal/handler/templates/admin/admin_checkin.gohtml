@@ -5,10 +5,13 @@
 */}}
 {{define "content"}}
 {{$e := .Event}}
+{{/* A check-in volunteer cannot open registrations; they see references, not links. */}}
+{{$read := .Can "read"}}
 
-<a class="back" href="/admin/events/{{$e.ID}}">← {{$e.Title}}</a>
+{{if $read}}<a class="back" href="/admin/events/{{$e.ID}}">← Event details</a>
+{{else}}<a class="back" href="/admin/checkin">← Events</a>{{end}}
 <div class="page-head">
-  <h1>Check-in</h1>
+  <h1>{{$e.Title}}</h1>
   {{template "checkin_counts" .}}
 </div>
 
@@ -22,7 +25,7 @@
   <p class="notice door problem" role="alert"><strong>{{.Name}}</strong>'s ticket was cancelled. Send them to the registration desk.</p>
   {{else if eq $.Result "unpaid"}}
   <p class="notice door problem" role="alert"><strong>{{.Name}}</strong>'s registration
-    <a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a> is still awaiting payment. Send them to the registration desk.</p>
+    {{if $read}}<a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a>{{else}}{{.Reference}}{{end}} is still awaiting payment. Send them to the registration desk.</p>
   {{else if eq $.Result "undone"}}
   <p class="notice" role="status"><strong>{{.Name}}</strong>'s check-in was undone.</p>
   {{end}}
@@ -54,7 +57,7 @@
     <tbody>
     {{range .Results}}
       <tr>
-        <td>{{.Name}}<br><small class="muted">{{.TicketName}} · <a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a></small></td>
+        <td>{{.Name}}<br><small class="muted">{{.TicketName}} · {{if $read}}<a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a>{{else}}{{.Reference}}{{end}}</small></td>
         <td class="num">
           {{if .CanEnter}}
           <form method="post" action="/admin/events/{{$e.ID}}/checkin">

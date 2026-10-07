@@ -48,15 +48,17 @@ static map in [`internal/auth/model.go`](../internal/auth/model.go), not a table
 
 | Permission | Covers | `owner` | `admin` | `manager` | `checkin` | `viewer` |
 |---|---|---|---|---|---|---|
-| `read` | every admin page that only displays, including the attendee CSV export | yes | yes | yes | yes | yes |
+| `account` | your own profile and password, and the `/admin/` front door | yes | yes | yes | yes | yes |
+| `read` | the event and registration pages that only display, including the attendee CSV export | yes | yes | yes | — | yes |
 | `events.write` | events, ticket types, questions, event images | yes | yes | yes | — | — |
 | `registrations.write` | recording cash and EFT payments, cancelling, resending tickets, retrying email | yes | yes | yes | — | — |
 | `checkin` | the door page: checking in and undoing it | yes | yes | yes | yes | — |
 | `users.write` | `/admin/users`: creating accounts, changing roles, disabling, resetting passwords | yes | yes | — | — | — |
 
-`checkin` is the role for door volunteers. Note that it holds `read`, so a check-in account
-can open every read-only admin page, registrations and the attendee export included. A
-`viewer` cannot reach the door. A disabled account holds no permissions at all, and an
+`checkin` is the role for door volunteers. It does not hold `read`: a check-in account
+reaches the door pages and its own account, and the door shows names, ticket types and
+references but never contact details, answers or payments. A `viewer` cannot reach the
+door. A disabled account holds no permissions at all, and an
 unknown role fails closed.
 
 Templates hide controls a role cannot use, but that is presentation: the enforcement is

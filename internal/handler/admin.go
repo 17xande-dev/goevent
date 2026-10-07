@@ -240,7 +240,7 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	// admin registers a route behind a session and the permission it needs, and
 	// records the pair. The permission is a required argument rather than
 	// something a route can leave out: a new route has to say what it is for, and
-	// auth.PermRead is how it says "any signed-in administrator".
+	// auth.PermAccount is how it says "any signed-in administrator".
 	admin := func(pattern string, perm auth.Permission, handler http.HandlerFunc) {
 		method, path, ok := strings.Cut(pattern, " ")
 		if !ok {
@@ -249,8 +249,9 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 		h.adminRoutes = append(h.adminRoutes, AdminRoute{Method: method, Pattern: path, Perm: perm})
 		mux.Handle(pattern, protect(h.requirePerm(perm, handler)))
 	}
-	admin("GET /admin/{$}", auth.PermRead, func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, adminHome, http.StatusSeeOther)
+	admin("GET /admin/{$}", auth.PermAccount, func(w http.ResponseWriter, r *http.Request) {
+		user, _ := middleware.AdminUser(r)
+		http.Redirect(w, r, landing(user), http.StatusSeeOther)
 	})
 	// Events, their ticket types and their questions. See admin_events.go. The
 	// new-thing forms are events.write rather than read: they exist only to
@@ -280,7 +281,9 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	// registrations, and buffered — see adminEventExport.
 	admin("GET /admin/events/{id}/attendees.csv", auth.PermRead, h.adminEventExport)
 	// The door: see admin_checkin.go. checkin rather than read, because a viewer
-	// has no business at the door, and the role made for volunteers has it.
+	// has no business at the door, and the role made for volunteers has only
+	// this — so the door has its own list of events to choose from.
+	admin("GET "+checkinHome, auth.PermCheckin, h.adminCheckinEvents)
 	admin("GET /admin/events/{id}/checkin", auth.PermCheckin, h.adminCheckin)
 	admin("GET /admin/events/{id}/checkin/counts", auth.PermCheckin, h.adminCheckinCounts)
 	admin("POST /admin/events/{id}/checkin", auth.PermCheckin, h.adminCheckinScan)
@@ -304,15 +307,15 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	admin("POST /admin/users/{id}/role", auth.PermUsersWrite, h.adminUserRole)
 	admin("POST /admin/users/{id}/disabled", auth.PermUsersWrite, h.adminUserDisabled)
 	admin("POST /admin/users/{id}/password", auth.PermUsersWrite, h.adminUserPasswordReset)
-	// Your profile settings: PermRead, because every role has a password, and
+	// Your profile settings: PermAccount, because every role has a password, and
 	// written as accountPath because requirePerm exempts exactly this path from
 	// the forced-change bounce. Two strings that had to match would eventually
 	// not. The POST is the password change.
-	admin("GET "+accountPath, auth.PermRead, h.adminAccount)
+	admin("GET "+accountPath, auth.PermAccount, h.adminAccount)
 	// Rate limited for the same reason the login POST is: it verifies a secret.
 	// Inside the session check rather than outside it, so the allowance is spent
 	// by signed-in administrators rather than by anyone who can reach the door.
-	admin("POST "+accountPath, auth.PermRead, rateLimited(h.limits.login, h.adminPasswordChange))
+	admin("POST "+accountPath, auth.PermAccount, rateLimited(h.limits.login, h.adminPasswordChange))
 }
 
 // rateLimited puts a limiter in front of one handler, in the shape the route

@@ -1,12 +1,13 @@
 # Admin and accounts
 
-The admin lives at `/admin`, and lands on the events list.
+The admin lives at `/admin`. It lands on the events list, or for a `checkin` account on
+`/admin/checkin`, the list of events to check people in for.
 
 | Area | Routes | Permission to change |
 |---|---|---|
 | Events, ticket types, questions, images | `/admin/events`, `/admin/events/{id}/…` | `events.write` |
 | An event's attendees as CSV | `GET /admin/events/{id}/attendees.csv` | `read` |
-| The door | `/admin/events/{id}/checkin`; see [Check-in](checkin.md) | `checkin` |
+| The door | `/admin/checkin`, `/admin/events/{id}/checkin`; see [Check-in](checkin.md) | `checkin` |
 | Registrations: record cash or EFT, cancel a registration or one attendee, resend tickets, retry email | `/admin/registrations`, `/admin/registrations/{id}/…` | `registrations.write` |
 | Administrator accounts | `/admin/users` | `users.write` |
 | Your own profile and password | `/admin/account` | any signed-in account |
@@ -64,12 +65,13 @@ Five roles. `owner` and `admin` can do everything; the others are narrower:
 | `owner` | Everything. The role the last-owner guard protects |
 | `admin` | Everything, including managing accounts |
 | `manager` | Running events and registrations, and the door. Cannot reach `/admin/users` |
-| `checkin` | Door volunteers: the check-in page, plus read access to the admin |
+| `checkin` | Door volunteers: the door pages and their own account, nothing else |
 | `viewer` | Reads every admin page except the door, changes nothing |
 
 The full permission matrix is in [Security](security.md#roles-and-permissions). Give each
-account the least role that covers the job. `checkin` still reads registrations and the
-attendee export, so a volunteer who should see nothing else is not yet expressible.
+account the least role that covers the job. A `checkin` account sees who is expected at the
+door (names, ticket types, references) but not the registrations behind them: no contact
+details, answers, payments or export.
 
 ## Managing accounts
 

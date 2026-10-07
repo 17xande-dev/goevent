@@ -37,9 +37,12 @@ func TestRoleCan(t *testing.T) {
 		{RoleViewer, PermEventsWrite, false},
 		{RoleViewer, PermRead, true},
 		{RoleViewer, PermCheckin, false},
-		// A door volunteer checks people in and can change nothing else.
+		{RoleViewer, PermAccount, true},
+		// A door volunteer checks people in and can see nothing else: not the
+		// registrations, not the export.
 		{RoleCheckin, PermCheckin, true},
-		{RoleCheckin, PermRead, true},
+		{RoleCheckin, PermAccount, true},
+		{RoleCheckin, PermRead, false},
 		{RoleCheckin, PermEventsWrite, false},
 		{RoleCheckin, PermRegistrationsWrite, false},
 		{RoleCheckin, PermUsersWrite, false},

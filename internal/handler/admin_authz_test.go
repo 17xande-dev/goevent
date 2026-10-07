@@ -63,7 +63,9 @@ func TestAdminRoutes_RolesGetTheirPermissions(t *testing.T) {
 	}
 
 	cases := []permCase{
+		{auth.PermAccount, http.MethodGet, accountPath, nil},
 		{auth.PermRead, http.MethodGet, "/admin/events", nil},
+		{auth.PermRead, http.MethodGet, "/admin/registrations", nil},
 		{auth.PermEventsWrite, http.MethodGet, "/admin/events/new", nil},
 		{auth.PermEventsWrite, http.MethodPost, "/admin/events", url.Values{"title": {"An event"}}},
 		{auth.PermUsersWrite, http.MethodGet, "/admin/users", nil},

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/registrations"
 )
 
@@ -119,5 +120,39 @@ func TestCheckin_CountsFragmentIsJustTheCounts(t *testing.T) {
 	res, body := get(t, s.srv, door+"/counts")
 	if res.StatusCode != http.StatusOK || strings.Contains(body, "<html") || !strings.Contains(body, "of 2 in") {
 		t.Errorf("counts = %d:\n%s", res.StatusCode, excerpt(body))
+	}
+}
+
+// TestCheckin_AVolunteerSeesTheDoorAndNothingBehindIt is the check-in role as
+// Planning Center draws it: who is expected, not the registrations behind them.
+func TestCheckin_AVolunteerSeesTheDoorAndNothingBehindIt(t *testing.T) {
+	s := newApp(t)
+	door, as := freeRegistration(t, s)
+	mustAccount(t, s, "door@example.com", testPassword, auth.RoleCheckin)
+	signInAs(t, s.srv, "door@example.com", testPassword)
+
+	_, list := get(t, s.srv, checkinHome)
+	if !strings.Contains(list, `href="`+door+`"`) {
+		t.Errorf("the check-in list does not offer the event:\n%s", excerpt(list))
+	}
+	loc, page := scan(t, s, door, url.Values{"code": {"lovelace"}})
+	if !strings.Contains(loc, "q=lovelace") || !strings.Contains(page, as[0].TicketName) {
+		t.Fatalf("search as a volunteer went to %q:\n%s", loc, excerpt(page))
+	}
+	if strings.Contains(page, "/admin/registrations") || strings.Contains(page, `href="/admin/events"`) ||
+		strings.Contains(page, "ada@example.com") {
+		t.Errorf("the door shows a volunteer links or details behind it:\n%s", excerpt(page))
+	}
+	for _, path := range []string{
+		"/admin/registrations", "/admin/registrations/" + as[0].RegistrationID,
+		strings.TrimSuffix(door, "/checkin") + "/attendees.csv", strings.TrimSuffix(door, "/checkin"),
+	} {
+		if res, _ := get(t, s.srv, path); res.StatusCode != http.StatusForbidden {
+			t.Errorf("GET %s as check-in = %d, want 403", path, res.StatusCode)
+		}
+	}
+	// Their own account is theirs to manage.
+	if res, _ := get(t, s.srv, accountPath); res.StatusCode != http.StatusOK {
+		t.Errorf("GET %s as check-in = %d", accountPath, res.StatusCode)
 	}
 }

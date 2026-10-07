@@ -253,22 +253,35 @@ func signInAs(t *testing.T, srv *httptest.Server, email, password string) {
 	}
 }
 
-func TestAdmin_HomeIsTheEventsListForAnySignedInRole(t *testing.T) {
-	s := newApp(t)
-	mustAccount(t, s, "door@example.com", testPassword, auth.RoleCheckin)
-	signInAs(t, s.srv, "door@example.com", testPassword)
-
-	res, _ := get(t, s.srv, "/admin/")
-	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != adminHome {
-		t.Fatalf("GET /admin/ = %d %q, want 303 to %s", res.StatusCode, res.Header.Get("Location"), adminHome)
-	}
-	// A door volunteer's first page must not be a 403.
-	res, body := get(t, s.srv, adminHome)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET %s as check-in = %d %s", adminHome, res.StatusCode, body)
-	}
-	if !strings.Contains(body, "Test Events") {
-		t.Errorf("the admin does not name the site:\n%s", excerpt(body))
+func TestAdmin_HomeIsAPageEveryRoleCanOpen(t *testing.T) {
+	for _, c := range []struct {
+		role auth.Role
+		want string
+	}{
+		{auth.RoleViewer, adminHome},
+		// A door volunteer's first page must not be a 403.
+		{auth.RoleCheckin, checkinHome},
+	} {
+		t.Run(string(c.role), func(t *testing.T) {
+			s := newApp(t)
+			email := string(c.role) + "@example.com"
+			mustAccount(t, s, email, testPassword, c.role)
+			res, _ := post(t, s.srv, "/admin/login", url.Values{"email": {email}, "password": {testPassword}})
+			if loc := res.Header.Get("Location"); loc != c.want {
+				t.Errorf("signing in lands on %q, want %s", loc, c.want)
+			}
+			res, _ = get(t, s.srv, "/admin/")
+			if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != c.want {
+				t.Fatalf("GET /admin/ = %d %q, want 303 to %s", res.StatusCode, res.Header.Get("Location"), c.want)
+			}
+			res, body := get(t, s.srv, c.want)
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s as %s = %d %s", c.want, c.role, res.StatusCode, body)
+			}
+			if !strings.Contains(body, "Test Events") {
+				t.Errorf("the admin does not name the site:\n%s", excerpt(body))
+			}
+		})
 	}
 }
 

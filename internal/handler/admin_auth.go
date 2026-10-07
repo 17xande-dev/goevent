@@ -12,9 +12,21 @@ import (
 	"github.com/17xande-dev/goevent/internal/validate"
 )
 
-// adminHome is where signing in lands when nothing asked to go elsewhere. Every
-// role can open it, so a door volunteer's first page is not a 403.
+// adminHome is where signing in lands when nothing asked to go elsewhere, for
+// every role that can read the admin.
 const adminHome = "/admin/events"
+
+// checkinHome is the door volunteer's adminHome: the events to check people in
+// for, and nothing else, because that is all the role can open.
+const checkinHome = "/admin/checkin"
+
+// landing is where a user's admin begins: never a page their role is refused.
+func landing(u auth.User) string {
+	if !u.Role.Can(auth.PermRead) && u.Role.Can(auth.PermCheckin) {
+		return checkinHome
+	}
+	return adminHome
+}
 
 type loginPage struct {
 	page
@@ -64,8 +76,8 @@ func (h *Handler) adminLoginForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Already signed in? Skip the form rather than inviting a second login.
-	if _, ok := h.currentSession(r); ok {
-		http.Redirect(w, r, adminHome, http.StatusSeeOther)
+	if user, ok := h.currentSession(r); ok {
+		http.Redirect(w, r, landing(user), http.StatusSeeOther)
 		return
 	}
 	h.render(w, r, http.StatusOK, "admin_login", loginPage{
@@ -109,7 +121,7 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logger(r).Info("admin signed in", "user", user.ID, "email", user.Email, "role", user.Role)
 	if next == "" {
-		next = adminHome
+		next = landing(user)
 	}
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
