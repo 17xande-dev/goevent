@@ -1,2 +1,8 @@
+{{/*
+  registration_status renders a registration's status as a badge, with the flag
+  an organiser has to act on beside it.
+*/}}
+{{define "registration_status"}}<span class="badge{{if eq .Status "confirmed"}} done{{else if or (eq .Status "cancelled") (eq .Status "expired")}} problem{{end}}">{{.Status.Label}}</span>{{if .Oversold}} <span class="badge problem">Oversold</span>{{end}}{{if .PayLater}}{{if eq .Status "pending"}} <span class="badge">Paying later</span>{{end}}{{end}}{{end}}
+
 {{/* event_status renders an events.Status as a badge. */}}
 {{define "event_status"}}<span class="badge{{if eq . "published"}} done{{else if eq . "cancelled"}} problem{{end}}">{{.Label}}</span>{{end}}

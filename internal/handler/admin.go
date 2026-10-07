@@ -276,6 +276,18 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	admin("GET /admin/events/{id}/questions/{questionID}", auth.PermRead, h.adminQuestionEdit)
 	admin("POST /admin/events/{id}/questions/{questionID}", auth.PermEventsWrite, h.adminQuestionUpdate)
 	admin("POST /admin/events/{id}/questions/{questionID}/delete", auth.PermEventsWrite, h.adminQuestionDelete)
+	// An event's attendees as CSV: read, because it is a view of the
+	// registrations, and buffered — see adminEventExport.
+	admin("GET /admin/events/{id}/attendees.csv", auth.PermRead, h.adminEventExport)
+	// Registrations. See admin_registrations.go. Payments recorded here confirm
+	// a registration exactly as a gateway's do.
+	admin("GET /admin/registrations", auth.PermRead, h.adminRegistrationList)
+	admin("GET /admin/registrations/{id}", auth.PermRead, h.adminRegistrationShow)
+	admin("POST /admin/registrations/{id}/payments", auth.PermRegistrationsWrite, h.adminRegistrationPay)
+	admin("POST /admin/registrations/{id}/cancel", auth.PermRegistrationsWrite, h.adminRegistrationCancel)
+	admin("POST /admin/registrations/{id}/attendees/{attendeeID}/cancel", auth.PermRegistrationsWrite, h.adminAttendeeCancel)
+	admin("POST /admin/registrations/{id}/resend", auth.PermRegistrationsWrite, h.adminRegistrationResend)
+	admin("POST /admin/registrations/{id}/emails/retry", auth.PermRegistrationsWrite, h.adminRegistrationRetryEmail)
 	// Administrator accounts. See internal/handler/admin_users.go — accounts are
 	// disabled, never deleted, and nobody may change their own role, disable
 	// themselves, or reset their own password from these pages.

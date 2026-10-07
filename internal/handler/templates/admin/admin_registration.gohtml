@@ -1,0 +1,154 @@
+{{define "content"}}
+{{$write := .Can "registrations.write"}}
+{{$r := .Registration}}
+
+<a class="back" href="/admin/registrations?event={{.Event.ID}}">← Registrations for {{.Event.Title}}</a>
+<div class="page-head">
+  <h1>{{$r.Reference}}</h1>
+  {{template "registration_status" $r}}
+</div>
+
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+{{if .Problem}}<p class="notice problem">{{.Problem}}</p>{{end}}
+{{if $r.Oversold}}
+<p class="notice problem"><strong>Oversold.</strong> This registration was paid for after its hold lapsed, and the
+event had filled in the meantime. It is confirmed — the money is real — so decide whether to make room or
+refund it in the gateway's dashboard.</p>
+{{end}}
+
+<dl class="facts">
+  <dt>Event</dt><dd><a href="/admin/events/{{.Event.ID}}">{{.Event.Title}}</a> · {{.Event.When}}</dd>
+  <dt>Registered by</dt><dd>{{$r.ContactName}} · {{$r.ContactEmail}}{{with $r.ContactPhone}} · {{.}}{{end}}</dd>
+  <dt>Registered</dt><dd>{{(.Event.Local $r.CreatedAt).Format "Mon 2 Jan 2006, 15:04"}}</dd>
+  <dt>Total</dt><dd>{{if $r.Free}}Free{{else}}{{$r.Currency}} {{money $r.TotalCents}} · paid {{money .PaidCents}}{{with .Owed}} · <strong>{{money .}} owed</strong>{{end}}{{end}}</dd>
+  {{if eq $r.Status "pending"}}<dt>Held until</dt><dd>{{(.Event.Local $r.HoldExpiresAt).Format "Mon 2 Jan 2006, 15:04"}}</dd>{{end}}
+  <dt>Their page</dt><dd><a href="{{.ManageURL}}">Open as the registrant sees it</a></dd>
+</dl>
+
+<h2>People</h2>
+<div class="scroll-x">
+  <table>
+    <thead><tr><th>Name</th><th>Ticket</th><th>Answers</th><th>Checked in</th><th></th></tr></thead>
+    <tbody>
+    {{range .Attendees}}
+      <tr>
+        <td>{{.Name}}{{with .Email}}<br><small class="muted">{{.}}</small>{{end}}</td>
+        <td>{{.TicketName}}{{if eq .Status "cancelled"}} <span class="badge problem">Cancelled</span>{{end}}</td>
+        <td>{{range index $.AttendeeAnswers .ID}}<small><span class="muted">{{.Label}}:</span> {{.Value}}</small><br>{{end}}</td>
+        <td>{{with .CheckedInAt}}{{($.Event.Local .).Format "15:04, 2 Jan"}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          {{if and $write (eq .Status "active") (ne $r.Status "cancelled")}}
+          <form method="post" action="/admin/registrations/{{$r.ID}}/attendees/{{.ID}}/cancel">
+            {{template "csrf" $.CSRFToken}}
+            <button class="quiet" type="submit">Cancel</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{with .Answers}}
+<h2>Answers</h2>
+<dl class="facts">{{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+{{end}}
+
+<h2>Payments</h2>
+{{if .Payments}}
+<div class="scroll-x">
+  <table>
+    <thead><tr><th>Method</th><th class="num">Amount</th><th>Status</th><th>Reference</th><th>When</th></tr></thead>
+    <tbody>
+    {{range .Payments}}
+      <tr>
+        <td>{{label .Method}}</td>
+        <td class="num">{{.Currency}} {{money .AmountCents}}</td>
+        <td>{{label .Status}}{{with .GatewayStatus}} <small class="muted">({{.}})</small>{{end}}</td>
+        <td><small>{{.GatewayRef}}{{with .Note}}{{.}}{{end}}</small></td>
+        <td><small>{{with .PaidAt}}{{($.Event.Local .).Format "2 Jan 15:04"}}{{else}}{{($.Event.Local .CreatedAt).Format "2 Jan 15:04"}}{{end}}</small></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">None.</p>
+{{end}}
+
+{{if and $write .Owed (ne $r.Status "cancelled")}}
+<form class="panel" method="post" action="/admin/registrations/{{$r.ID}}/payments">
+  <h3>Record a payment</h3>
+  {{template "csrf" .CSRFToken}}
+  <div class="field-row">
+    <div class="field narrow">
+      <label for="method">Method</label>
+      <select id="method" name="method">
+        <option value="eft">EFT</option>
+        <option value="cash">Cash</option>
+      </select>
+    </div>
+    <div class="field narrow">
+      <label for="amount">Amount ({{$r.Currency}})</label>
+      <input id="amount" name="amount" inputmode="decimal" value="{{money .Owed}}" required>
+    </div>
+  </div>
+  <div class="field">
+    <label for="note">Note</label>
+    <input id="note" name="note" placeholder="Bank reference, receipt number…" maxlength="300">
+  </div>
+  <div class="actions">
+    <button type="submit">Record payment</button>
+    <small class="hint">Paying the whole amount confirms the registration and sends the tickets.</small>
+  </div>
+</form>
+{{end}}
+
+<h2>Emails</h2>
+{{if .Emails}}
+<div class="scroll-x">
+  <table>
+    <thead><tr><th>Email</th><th>Attempts</th><th>Sent</th><th></th></tr></thead>
+    <tbody>
+    {{range .Emails}}
+      <tr>
+        <td>{{label .Kind}}</td>
+        <td class="num">{{.Attempts}}</td>
+        <td>{{with .SentAt}}{{($.Event.Local .).Format "2 Jan 15:04"}}{{else}}<span class="muted">Not yet</span>{{end}}</td>
+        <td><small class="muted">{{.LastError}}</small></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">None.</p>
+{{end}}
+
+{{if $write}}
+<div class="row">
+  {{if eq $r.Status "confirmed"}}
+  <form method="post" action="/admin/registrations/{{$r.ID}}/resend">
+    {{template "csrf" .CSRFToken}}
+    <button class="quiet" type="submit">Send the tickets again</button>
+  </form>
+  {{end}}
+  <form method="post" action="/admin/registrations/{{$r.ID}}/emails/retry">
+    {{template "csrf" .CSRFToken}}
+    <button class="quiet" type="submit">Retry failed emails</button>
+  </form>
+  {{if ne $r.Status "cancelled"}}
+  <form method="post" action="/admin/registrations/{{$r.ID}}/cancel">
+    {{template "csrf" .CSRFToken}}
+    <button class="quiet" type="submit">Cancel this registration</button>
+  </form>
+  {{end}}
+</div>
+{{if and (ne $r.Status "cancelled") .Payments}}
+<p class="hint"><small>Cancelling releases the places. It does not refund: do that in the gateway's
+dashboard or by EFT.</small></p>
+{{end}}
+{{end}}
+
+{{end}}

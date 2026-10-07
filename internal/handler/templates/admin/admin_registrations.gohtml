@@ -1,0 +1,57 @@
+{{define "content"}}
+
+<h1>Registrations</h1>
+
+{{/*
+  A GET form with a real submit button. No onchange to submit on selection: the
+  CSP refuses inline handlers, and a filter wired that way renders, returns 200,
+  and silently does nothing.
+*/}}
+<form class="row panel" method="get" action="/admin/registrations">
+  <div class="field">
+    <label for="event">Event</label>
+    <select id="event" name="event">
+      <option value="">All events</option>
+      {{range .Events}}<option value="{{.ID}}"{{if eq .ID $.Filter.EventID}} selected{{end}}>{{.Title}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">Any status</option>
+      {{range .Statuses}}<option value="{{.}}"{{if eq . $.Filter.Status}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="q">Search</label>
+    <input id="q" name="q" type="search" value="{{.Filter.Search}}" placeholder="Reference, name or email">
+  </div>
+  <div class="actions"><button type="submit">Show</button></div>
+</form>
+
+{{if .Registrations}}
+<div class="scroll-x">
+  <table>
+    <thead>
+      <tr><th>Reference</th><th>Registered by</th><th>Event</th><th class="num">People</th><th class="num">Total</th><th>Status</th><th>When</th></tr>
+    </thead>
+    <tbody>
+    {{range .Registrations}}
+      <tr>
+        <td><a href="/admin/registrations/{{.ID}}">{{.Reference}}</a></td>
+        <td>{{.ContactName}}<br><small class="muted">{{.ContactEmail}}</small></td>
+        <td>{{.EventTitle}}</td>
+        <td class="num">{{.AttendeeCount}}</td>
+        <td class="num">{{if .Free}}Free{{else}}{{.Currency}} {{money .TotalCents}}{{with .Owed}}<br><small class="muted">{{$.Currency}} {{money .}} owed</small>{{end}}{{end}}</td>
+        <td>{{template "registration_status" .Registration}}</td>
+        <td><small>{{.CreatedAt.Format "2 Jan 15:04"}}</small></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No registrations match.</p>
+{{end}}
+
+{{end}}

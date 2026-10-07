@@ -383,7 +383,23 @@ func funcs(images blob.Storage) template.FuncMap {
 		// dict builds a map from alternating keys and values, for calling a
 		// partial that needs more than one thing: html/template passes one value.
 		"dict": dict,
+		// label is a stored word — a payment method, an email kind, a payment
+		// status — for a person. An unknown word is shown as it is.
+		"label": func(s string) string {
+			if l, ok := labels[s]; ok {
+				return l
+			}
+			return s
+		},
 	}
+}
+
+// labels are the stored words the admin shows, and how it shows them.
+var labels = map[string]string{
+	"eft": "EFT", "cash": "Cash", "payfast": "PayFast", "snapscan": "SnapScan",
+	"pending": "Pending", "paid": "Paid", "failed": "Failed", "cancelled": "Cancelled",
+	"confirmation": "Confirmation with tickets", "received": "Payment instructions",
+	"notify": "Organiser's copy", "resend": "Tickets sent again",
 }
 
 func dict(kv ...any) (map[string]any, error) {

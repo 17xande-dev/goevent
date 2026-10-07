@@ -10,6 +10,58 @@ import (
 	"time"
 )
 
+const cancelAttendee = `-- name: CancelAttendee :execrows
+UPDATE attendees SET status = 'cancelled'
+WHERE id = $1 AND registration_id = $2 AND status = 'active'
+`
+
+type CancelAttendeeParams struct {
+	ID             string
+	RegistrationID string
+}
+
+func (q *Queries) CancelAttendee(ctx context.Context, arg CancelAttendeeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelAttendee, arg.ID, arg.RegistrationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const cancelRegistration = `-- name: CancelRegistration :one
+UPDATE registrations SET status = 'cancelled', cancelled_at = now()
+WHERE id = $1 AND status IN ('pending', 'confirmed', 'expired')
+RETURNING id, event_id, reference, contact_first_name, contact_last_name, contact_email, contact_phone, status, total_cents, currency, hold_expires_at, pay_later, checkout_key, oversold, emailed, created_at, confirmed_at, cancelled_at
+`
+
+// One statement, so a cancellation cannot race a payment confirming the same
+// row: whichever commits second sees the other's status.
+func (q *Queries) CancelRegistration(ctx context.Context, id string) (Registration, error) {
+	row := q.db.QueryRow(ctx, cancelRegistration, id)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.Reference,
+		&i.ContactFirstName,
+		&i.ContactLastName,
+		&i.ContactEmail,
+		&i.ContactPhone,
+		&i.Status,
+		&i.TotalCents,
+		&i.Currency,
+		&i.HoldExpiresAt,
+		&i.PayLater,
+		&i.CheckoutKey,
+		&i.Oversold,
+		&i.Emailed,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
 const confirmRegistration = `-- name: ConfirmRegistration :one
 UPDATE registrations SET status = 'confirmed', confirmed_at = now(), oversold = $2
 WHERE id = $1
@@ -264,6 +316,64 @@ func (q *Queries) CreateRegistration(ctx context.Context, arg CreateRegistration
 	return i, err
 }
 
+const eventMoney = `-- name: EventMoney :one
+SELECT COALESCE(sum(p.amount_cents) FILTER (WHERE p.status = 'paid'), 0)::bigint AS paid_cents,
+    (SELECT count(*) FROM registrations r2 WHERE r2.event_id = $1 AND r2.oversold)::int AS oversold
+FROM payments p
+JOIN registrations r ON r.id = p.registration_id
+WHERE r.event_id = $1
+`
+
+type EventMoneyRow struct {
+	PaidCents int64
+	Oversold  int
+}
+
+func (q *Queries) EventMoney(ctx context.Context, eventID string) (EventMoneyRow, error) {
+	row := q.db.QueryRow(ctx, eventMoney, eventID)
+	var i EventMoneyRow
+	err := row.Scan(&i.PaidCents, &i.Oversold)
+	return i, err
+}
+
+const eventTicketCounts = `-- name: EventTicketCounts :many
+SELECT a.ticket_type_id,
+    count(*) FILTER (WHERE r.status = 'confirmed')::int AS confirmed,
+    count(*) FILTER (WHERE r.status = 'pending' AND r.hold_expires_at > now())::int AS held
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND a.status = 'active'
+GROUP BY a.ticket_type_id
+`
+
+type EventTicketCountsRow struct {
+	TicketTypeID string
+	Confirmed    int
+	Held         int
+}
+
+// Seats per ticket type, split the way the event page wants them: confirmed,
+// and pending holds that still stand.
+func (q *Queries) EventTicketCounts(ctx context.Context, eventID string) ([]EventTicketCountsRow, error) {
+	rows, err := q.db.Query(ctx, eventTicketCounts, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EventTicketCountsRow{}
+	for rows.Next() {
+		var i EventTicketCountsRow
+		if err := rows.Scan(&i.TicketTypeID, &i.Confirmed, &i.Held); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireHolds = `-- name: ExpireHolds :execrows
 UPDATE registrations SET status = 'expired'
 WHERE status = 'pending' AND hold_expires_at <= now()
@@ -278,6 +388,110 @@ func (q *Queries) ExpireHolds(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const exportAnswers = `-- name: ExportAnswers :many
+SELECT ans.registration_id, ans.attendee_id, ans.question_id, ans.value
+FROM answers ans
+JOIN registrations r ON r.id = ans.registration_id
+WHERE r.event_id = $1
+`
+
+type ExportAnswersRow struct {
+	RegistrationID string
+	AttendeeID     *string
+	QuestionID     string
+	Value          string
+}
+
+func (q *Queries) ExportAnswers(ctx context.Context, eventID string) ([]ExportAnswersRow, error) {
+	rows, err := q.db.Query(ctx, exportAnswers, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportAnswersRow{}
+	for rows.Next() {
+		var i ExportAnswersRow
+		if err := rows.Scan(
+			&i.RegistrationID,
+			&i.AttendeeID,
+			&i.QuestionID,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const exportAttendees = `-- name: ExportAttendees :many
+SELECT a.id AS attendee_id, a.first_name, a.last_name, a.email, a.ticket_name, a.unit_price_cents,
+    a.checked_in_at, r.id AS registration_id, r.reference, r.status AS registration_status,
+    r.contact_first_name, r.contact_last_name, r.contact_email, r.contact_phone, r.created_at
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND a.status = 'active' AND r.status IN ('confirmed', 'pending')
+ORDER BY r.created_at, a.position
+`
+
+type ExportAttendeesRow struct {
+	AttendeeID         string
+	FirstName          string
+	LastName           string
+	Email              string
+	TicketName         string
+	UnitPriceCents     int64
+	CheckedInAt        *time.Time
+	RegistrationID     string
+	Reference          string
+	RegistrationStatus string
+	ContactFirstName   string
+	ContactLastName    string
+	ContactEmail       string
+	ContactPhone       string
+	CreatedAt          time.Time
+}
+
+// Every active attendee of an event with their registration, for the export.
+func (q *Queries) ExportAttendees(ctx context.Context, eventID string) ([]ExportAttendeesRow, error) {
+	rows, err := q.db.Query(ctx, exportAttendees, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExportAttendeesRow{}
+	for rows.Next() {
+		var i ExportAttendeesRow
+		if err := rows.Scan(
+			&i.AttendeeID,
+			&i.FirstName,
+			&i.LastName,
+			&i.Email,
+			&i.TicketName,
+			&i.UnitPriceCents,
+			&i.CheckedInAt,
+			&i.RegistrationID,
+			&i.Reference,
+			&i.RegistrationStatus,
+			&i.ContactFirstName,
+			&i.ContactLastName,
+			&i.ContactEmail,
+			&i.ContactPhone,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getPayment = `-- name: GetPayment :one
@@ -506,6 +720,97 @@ func (q *Queries) ListPayments(ctx context.Context, registrationID string) ([]Pa
 			&i.Note,
 			&i.CreatedAt,
 			&i.PaidAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRegistrations = `-- name: ListRegistrations :many
+SELECT r.id, r.event_id, r.reference, r.contact_first_name, r.contact_last_name, r.contact_email, r.contact_phone, r.status, r.total_cents, r.currency, r.hold_expires_at, r.pay_later, r.checkout_key, r.oversold, r.emailed, r.created_at, r.confirmed_at, r.cancelled_at, e.title AS event_title,
+    (SELECT count(*) FROM attendees a WHERE a.registration_id = r.id AND a.status = 'active')::int AS attendee_count,
+    (SELECT COALESCE(sum(p.amount_cents), 0) FROM payments p WHERE p.registration_id = r.id AND p.status = 'paid')::bigint AS paid_cents
+FROM registrations r
+JOIN events e ON e.id = r.event_id
+WHERE ($1::uuid IS NULL OR r.event_id = $1)
+  AND ($2::text IS NULL OR r.status = $2)
+  AND ($3::text IS NULL
+       OR r.reference ILIKE '%' || $3 || '%'
+       OR r.contact_email ILIKE '%' || $3 || '%'
+       OR (r.contact_first_name || ' ' || r.contact_last_name) ILIKE '%' || $3 || '%')
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT 500
+`
+
+type ListRegistrationsParams struct {
+	EventID *string
+	Status  *string
+	Search  *string
+}
+
+type ListRegistrationsRow struct {
+	ID               string
+	EventID          string
+	Reference        string
+	ContactFirstName string
+	ContactLastName  string
+	ContactEmail     string
+	ContactPhone     string
+	Status           string
+	TotalCents       int64
+	Currency         string
+	HoldExpiresAt    time.Time
+	PayLater         bool
+	CheckoutKey      string
+	Oversold         bool
+	Emailed          bool
+	CreatedAt        time.Time
+	ConfirmedAt      *time.Time
+	CancelledAt      *time.Time
+	EventTitle       string
+	AttendeeCount    int
+	PaidCents        int64
+}
+
+// The admin's list: newest first, optionally one event, one status, and a
+// search over the reference and the person who registered. The attendee count
+// and the amount paid come with each row, so the list needs no second query.
+func (q *Queries) ListRegistrations(ctx context.Context, arg ListRegistrationsParams) ([]ListRegistrationsRow, error) {
+	rows, err := q.db.Query(ctx, listRegistrations, arg.EventID, arg.Status, arg.Search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRegistrationsRow{}
+	for rows.Next() {
+		var i ListRegistrationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventID,
+			&i.Reference,
+			&i.ContactFirstName,
+			&i.ContactLastName,
+			&i.ContactEmail,
+			&i.ContactPhone,
+			&i.Status,
+			&i.TotalCents,
+			&i.Currency,
+			&i.HoldExpiresAt,
+			&i.PayLater,
+			&i.CheckoutKey,
+			&i.Oversold,
+			&i.Emailed,
+			&i.CreatedAt,
+			&i.ConfirmedAt,
+			&i.CancelledAt,
+			&i.EventTitle,
+			&i.AttendeeCount,
+			&i.PaidCents,
 		); err != nil {
 			return nil, err
 		}

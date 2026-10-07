@@ -333,6 +333,9 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 	for _, path := range []string{
 		"/events", "/events/" + pe.Slug, "/events/" + pe.Slug + "/register?qty." + child.ID + "=2",
 		manage, "/checkout/success?payment=" + paymentID, "/checkout/status?payment=" + paymentID,
+		// And the admin's view of what just happened.
+		"/admin/registrations", "/admin/registrations/" + onlyPendingRegistration(t, s),
+		"/admin/events/" + pe.ID,
 	} {
 		res, page := get(t, s.srv, path)
 		if res.StatusCode != http.StatusOK {
@@ -350,7 +353,17 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 			t.Errorf("%s carries an inline style or handler", path)
 		}
 	}
-	if checked < 20 {
+	if checked < 23 {
 		t.Fatalf("only %d pages checked", checked)
 	}
+}
+
+// onlyPendingRegistration is the id of the one registration awaiting payment.
+func onlyPendingRegistration(t *testing.T, s *app) string {
+	t.Helper()
+	var id string
+	if err := s.pool.QueryRow(t.Context(), `SELECT id FROM registrations WHERE status = 'pending'`).Scan(&id); err != nil {
+		t.Fatalf("one pending registration: %v", err)
+	}
+	return id
 }

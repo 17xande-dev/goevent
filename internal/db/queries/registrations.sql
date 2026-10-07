@@ -108,3 +108,66 @@ SELECT * FROM answers WHERE registration_id = $1 ORDER BY id;
 -- name: ExpireHolds :execrows
 UPDATE registrations SET status = 'expired'
 WHERE status = 'pending' AND hold_expires_at <= now();
+
+-- The admin's list: newest first, optionally one event, one status, and a
+-- search over the reference and the person who registered. The attendee count
+-- and the amount paid come with each row, so the list needs no second query.
+-- name: ListRegistrations :many
+SELECT r.*, e.title AS event_title,
+    (SELECT count(*) FROM attendees a WHERE a.registration_id = r.id AND a.status = 'active')::int AS attendee_count,
+    (SELECT COALESCE(sum(p.amount_cents), 0) FROM payments p WHERE p.registration_id = r.id AND p.status = 'paid')::bigint AS paid_cents
+FROM registrations r
+JOIN events e ON e.id = r.event_id
+WHERE (sqlc.narg(event_id)::uuid IS NULL OR r.event_id = sqlc.narg(event_id))
+  AND (sqlc.narg(status)::text IS NULL OR r.status = sqlc.narg(status))
+  AND (sqlc.narg(search)::text IS NULL
+       OR r.reference ILIKE '%' || sqlc.narg(search) || '%'
+       OR r.contact_email ILIKE '%' || sqlc.narg(search) || '%'
+       OR (r.contact_first_name || ' ' || r.contact_last_name) ILIKE '%' || sqlc.narg(search) || '%')
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT 500;
+
+-- One statement, so a cancellation cannot race a payment confirming the same
+-- row: whichever commits second sees the other's status.
+-- name: CancelRegistration :one
+UPDATE registrations SET status = 'cancelled', cancelled_at = now()
+WHERE id = $1 AND status IN ('pending', 'confirmed', 'expired')
+RETURNING *;
+
+-- name: CancelAttendee :execrows
+UPDATE attendees SET status = 'cancelled'
+WHERE id = $1 AND registration_id = $2 AND status = 'active';
+
+-- Seats per ticket type, split the way the event page wants them: confirmed,
+-- and pending holds that still stand.
+-- name: EventTicketCounts :many
+SELECT a.ticket_type_id,
+    count(*) FILTER (WHERE r.status = 'confirmed')::int AS confirmed,
+    count(*) FILTER (WHERE r.status = 'pending' AND r.hold_expires_at > now())::int AS held
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND a.status = 'active'
+GROUP BY a.ticket_type_id;
+
+-- name: EventMoney :one
+SELECT COALESCE(sum(p.amount_cents) FILTER (WHERE p.status = 'paid'), 0)::bigint AS paid_cents,
+    (SELECT count(*) FROM registrations r2 WHERE r2.event_id = $1 AND r2.oversold)::int AS oversold
+FROM payments p
+JOIN registrations r ON r.id = p.registration_id
+WHERE r.event_id = $1;
+
+-- Every active attendee of an event with their registration, for the export.
+-- name: ExportAttendees :many
+SELECT a.id AS attendee_id, a.first_name, a.last_name, a.email, a.ticket_name, a.unit_price_cents,
+    a.checked_in_at, r.id AS registration_id, r.reference, r.status AS registration_status,
+    r.contact_first_name, r.contact_last_name, r.contact_email, r.contact_phone, r.created_at
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND a.status = 'active' AND r.status IN ('confirmed', 'pending')
+ORDER BY r.created_at, a.position;
+
+-- name: ExportAnswers :many
+SELECT ans.registration_id, ans.attendee_id, ans.question_id, ans.value
+FROM answers ans
+JOIN registrations r ON r.id = ans.registration_id
+WHERE r.event_id = $1;

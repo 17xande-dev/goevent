@@ -18,6 +18,21 @@
       {{else}}<span class="muted">/events/{{.Event.Slug}} — not visible until published</span>{{end}}</dd>
 </dl>
 
+{{if .Stats.Oversold}}
+<p class="notice problem"><strong>{{.Stats.Oversold}} oversold</strong> — paid for after the hold lapsed, when the
+event had filled. They are confirmed; decide whether to make room or refund.
+<a href="/admin/registrations?event={{.Event.ID}}">See the registrations</a>.</p>
+{{end}}
+
+<dl class="facts">
+  <dt>Registered</dt>
+  <dd>{{.Stats.Confirmed}} confirmed{{with .Stats.Held}} · {{.}} held awaiting payment{{end}}{{with .Event.Capacity}} of {{.}}{{end}}</dd>
+  <dt>Received</dt><dd>{{.Currency}} {{money .Stats.PaidCents}}</dd>
+  <dt>Lists</dt>
+  <dd><a href="/admin/registrations?event={{.Event.ID}}">Registrations</a> ·
+      <a href="/admin/events/{{.Event.ID}}/attendees.csv">Download attendees (CSV)</a></dd>
+</dl>
+
 {{if and $write .Next}}
 {{/*
   One form per button, each naming its target status. The server checks the move
@@ -38,12 +53,14 @@
 {{if .TicketTypes}}
 <div class="scroll-x">
   <table>
-    <thead><tr><th>Name</th><th class="num">Price</th><th class="num">Capacity</th><th></th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th class="num">Price</th><th class="num">Taken</th><th class="num">Capacity</th><th></th><th></th></tr></thead>
     <tbody>
     {{range .TicketTypes}}
+      {{$c := index $.Stats.ByType .ID}}
       <tr>
         <td>{{.Name}}</td>
         <td class="num">{{if .Free}}Free{{else}}{{$.Currency}} {{money .PriceCents}}{{end}}</td>
+        <td class="num">{{$c.Confirmed}}{{with $c.Held}} <small class="muted">+{{.}} held</small>{{end}}</td>
         <td class="num">{{with .Capacity}}{{.}}{{else}}<span class="muted">No limit</span>{{end}}</td>
         <td>{{if .Archived}}<span class="badge">Archived</span>{{else if .Hidden}}<span class="badge">Hidden</span>{{end}}</td>
         <td><a href="/admin/events/{{$.Event.ID}}/tickets/{{.ID}}">{{if $write}}Edit{{else}}View{{end}}</a></td>

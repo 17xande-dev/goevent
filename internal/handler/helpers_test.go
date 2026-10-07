@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,19 +108,4 @@ func excerpt(body string) string {
 		return body[:1500] + "\n…"
 	}
 	return body
-}
-
-func postHTMX(t *testing.T, srv *httptest.Server, path string, form url.Values) (*http.Response, string) {
-	t.Helper()
-	if _, set := form["csrf_token"]; !set {
-		form.Set("csrf_token", csrfToken(t, srv))
-	}
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+path, strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatalf("new request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
-	req.Header.Set("Origin", srv.URL)
-	return do(t, srv, req)
 }

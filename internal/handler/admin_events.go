@@ -8,6 +8,7 @@ import (
 
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/events"
+	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/goevent/internal/validate"
 )
 
@@ -69,6 +70,8 @@ type eventPage struct {
 	TicketTypes []events.TicketType
 	Questions   []events.Question
 	Next        []events.Status
+	// Stats is the seats taken and the money received.
+	Stats       registrations.Stats
 	ImageError  string
 	AcceptTypes string
 	MaxUploadMB int64
@@ -224,7 +227,13 @@ func (h *Handler) renderEvent(w http.ResponseWriter, r *http.Request, status int
 		h.serverError(w, r, err)
 		return
 	}
+	stats, err := h.regs.EventStats(r.Context(), e.ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	h.render(w, r, status, "admin_event", eventPage{
+		Stats:         stats,
 		eventFormPage: eventFormPage{page: h.newPage(r, e.Title), Event: e, Form: form, Errors: errs},
 		Notice:        noticeFor(r, eventNotices),
 		Problem:       eventProblems[r.URL.Query().Get("problem")],

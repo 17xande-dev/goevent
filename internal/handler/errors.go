@@ -195,7 +195,3 @@ func (h *Handler) logger(r *http.Request) *slog.Logger {
 	}
 	return h.log.With("request_id", id)
 }
-
-// plainNotFound is Go's own 404, for the places where HTML would be the wrong
-// answer: a CORS preflight, and anything serving bytes rather than a page.
-func plainNotFound(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }

@@ -70,6 +70,12 @@ func (s *Store) Enqueue(ctx context.Context, q *gen.Queries, registrationID, kin
 	return nil
 }
 
+// Queue writes a job on its own, for an email nothing else has to commit with:
+// an administrator's "send the tickets again".
+func (s *Store) Queue(ctx context.Context, registrationID, kind string, payload []byte) error {
+	return s.Enqueue(ctx, gen.New(s.pool), registrationID, kind, payload)
+}
+
 // Job is one email to send, decrypted.
 type Job struct {
 	RegistrationID string

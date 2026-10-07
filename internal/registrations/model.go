@@ -126,8 +126,10 @@ type Payment struct {
 	Status         string
 	GatewayRef     string
 	GatewayStatus  string
-	CreatedAt      time.Time
-	PaidAt         *time.Time
+	// Note is what an administrator wrote when recording cash or EFT.
+	Note      string
+	CreatedAt time.Time
+	PaidAt    *time.Time
 }
 
 // Order is a registration form, submitted: what the checkout is asked to book.
@@ -257,7 +259,7 @@ func payment(r gen.Payment) Payment {
 	p := Payment{
 		ID: r.ID, RegistrationID: r.RegistrationID, Method: r.Method,
 		AmountCents: r.AmountCents, Currency: r.Currency, Status: r.Status,
-		GatewayStatus: r.GatewayStatus, CreatedAt: r.CreatedAt, PaidAt: r.PaidAt,
+		GatewayStatus: r.GatewayStatus, Note: r.Note, CreatedAt: r.CreatedAt, PaidAt: r.PaidAt,
 	}
 	if r.GatewayRef != nil {
 		p.GatewayRef = *r.GatewayRef
