@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/db/gen"
@@ -134,7 +135,7 @@ func (h *Handler) deliver(ctx context.Context, job outbox.Job) error {
 		if reg.Oversold {
 			subject = "OVERSOLD — " + subject
 		}
-		return h.mail.Send(ctx, mailer.Message{To: []string{h.cfg.NotifyEmail}, Subject: subject, Text: text})
+		return h.mail.Send(ctx, mailer.Message{To: []string{h.cfg.NotifyEmail}, Subject: oneLine(subject), Text: text})
 
 	case outbox.KindReceived:
 		return h.sendRendered(ctx, reg, "email_received", data,
@@ -179,6 +180,11 @@ func (h *Handler) sendRendered(ctx context.Context, reg registrations.Registrati
 		return err
 	}
 	return h.mail.Send(ctx, mailer.Message{
-		To: []string{reg.ContactEmail}, Subject: subject, Text: text, HTML: html, Inline: inline,
+		To: []string{reg.ContactEmail}, Subject: oneLine(subject), Text: text, HTML: html, Inline: inline,
 	})
 }
+
+// oneLine flattens a subject. The mailer refuses a line break in one, rightly,
+// and an event title is typed by a person: a title that somehow carries one
+// would otherwise fail every email for its event, on every retry.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

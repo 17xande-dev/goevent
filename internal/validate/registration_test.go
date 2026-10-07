@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/events"
@@ -13,7 +14,7 @@ func TestPhone_AcceptsHowSouthAfricansWriteThem(t *testing.T) {
 			t.Errorf("Phone(%q) refused: %s", ok, e)
 		}
 	}
-	for _, bad := range []string{"call me", "123", "+27 82 123 4567 89 01 23"} {
+	for _, bad := range []string{"call me", "123", "+27 82 123 4567 89 01 23", "082" + strings.Repeat(" ", 100) + "1234567"} {
 		e := FormErrors{}
 		if Phone(e, "p", bad); !e.Any() {
 			t.Errorf("Phone(%q) accepted", bad)

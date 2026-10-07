@@ -9,8 +9,10 @@
 {{if not .Found}}
   <p class="muted">There is nothing to report for this payment.</p>
 {{else if .Paid}}
-  <p><strong>Payment received.</strong> Your registration is confirmed and your tickets are on their way to
-  {{.Registration.ContactEmail}}.</p>
+  {{/* The address only for the browser that registered: a payment id is known
+       to the gateway too, and is no proof of being the registrant. */}}
+  <p><strong>Payment received.</strong> Your registration is confirmed and your tickets are on their way
+  {{if .Manage}}to {{.Registration.ContactEmail}}{{else}}by email{{end}}.</p>
   {{with .Manage}}<p><a class="button" href="{{.}}">See your registration</a></p>{{end}}
 {{else if .Failed}}
   <p><strong>That payment did not go through.</strong> Your places are held for a little while if you would

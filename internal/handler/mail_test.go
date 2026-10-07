@@ -148,3 +148,21 @@ func TestManage_ConfirmedRegistrationShowsTicketCodes(t *testing.T) {
 		t.Error("a pending registration's page shows ticket codes")
 	}
 }
+
+func TestMail_ALineBreakInTheTitleDoesNotStopTheEmail(t *testing.T) {
+	s := newApp(t, withNotify)
+	e, _, child := published(t, s, 10, func(e *events.Event) { e.Title = "Family\r\nCamp" })
+	submit(t, s, e, registerForm(t, s, e, map[string]int{child.ID: 1}))
+	s.handler.ProcessMail(t.Context())
+
+	for _, to := range []string{"ada@example.com", "organiser@example.com"} {
+		got := s.mail.To(to)
+		if len(got) != 1 {
+			t.Fatalf("mail to %s: %d sent", to, len(got))
+		}
+		// The fake does not validate; the real transports do.
+		if err := got[0].Validate(); err != nil || !strings.Contains(got[0].Subject, "Family Camp") {
+			t.Errorf("mail to %s, subject %q: %v", to, got[0].Subject, err)
+		}
+	}
+}

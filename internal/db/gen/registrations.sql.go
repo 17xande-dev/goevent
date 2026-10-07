@@ -968,9 +968,13 @@ func (q *Queries) LockPayment(ctx context.Context, id string) (Payment, error) {
 }
 
 const lockRegistration = `-- name: LockRegistration :one
-SELECT id, event_id, reference, contact_first_name, contact_last_name, contact_email, contact_phone, status, total_cents, currency, hold_expires_at, pay_later, checkout_key, oversold, emailed, created_at, confirmed_at, cancelled_at FROM registrations WHERE id = $1 FOR UPDATE
+SELECT id, event_id, reference, contact_first_name, contact_last_name, contact_email, contact_phone, status, total_cents, currency, hold_expires_at, pay_later, checkout_key, oversold, emailed, created_at, confirmed_at, cancelled_at FROM registrations WHERE id = $1 FOR NO KEY UPDATE
 `
 
+// NO KEY UPDATE, not UPDATE: nothing here changes a registration's id, and a
+// full UPDATE lock also blocks the KEY SHARE lock a foreign-key check takes. A
+// checkout holding the event lock and inserting a payment for this registration
+// would then wait on us while we wait on the event — a deadlock.
 func (q *Queries) LockRegistration(ctx context.Context, id string) (Registration, error) {
 	row := q.db.QueryRow(ctx, lockRegistration, id)
 	var i Registration

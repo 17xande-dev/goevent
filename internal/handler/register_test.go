@@ -199,13 +199,14 @@ func TestRegister_PaidHandsOverAndTheCallbackConfirms(t *testing.T) {
 
 	// The browser that registered is offered its registration on the return page…
 	_, ret := get(t, s.srv, "/checkout/success?payment="+paymentID)
-	if !strings.Contains(ret, "Payment received") || !strings.Contains(ret, "/r/"+reg.Reference+"?t=") {
+	if !strings.Contains(ret, "Payment received") || !strings.Contains(ret, "/r/"+reg.Reference+"?t=") ||
+		!strings.Contains(ret, reg.ContactEmail) {
 		t.Errorf("return page for the registrant:\n%s", excerpt(ret))
 	}
 	// …and anybody else holding the payment id — the gateway knows it — is not.
 	ret = stranger(t, s.srv.URL+"/checkout/success?payment="+paymentID)
-	if !strings.Contains(ret, "Payment received") || strings.Contains(ret, "/r/") {
-		t.Errorf("return page for a stranger links the registration:\n%s", excerpt(ret))
+	if !strings.Contains(ret, "Payment received") || strings.Contains(ret, "/r/") || strings.Contains(ret, reg.ContactEmail) {
+		t.Errorf("return page for a stranger links the registration or shows its address:\n%s", excerpt(ret))
 	}
 }
 

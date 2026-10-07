@@ -77,8 +77,12 @@ UPDATE payments SET status = 'paid', paid_at = now() WHERE id = $1;
 SELECT COALESCE(sum(amount_cents), 0)::bigint AS paid
 FROM payments WHERE registration_id = $1 AND status = 'paid';
 
+-- NO KEY UPDATE, not UPDATE: nothing here changes a registration's id, and a
+-- full UPDATE lock also blocks the KEY SHARE lock a foreign-key check takes. A
+-- checkout holding the event lock and inserting a payment for this registration
+-- would then wait on us while we wait on the event — a deadlock.
 -- name: LockRegistration :one
-SELECT * FROM registrations WHERE id = $1 FOR UPDATE;
+SELECT * FROM registrations WHERE id = $1 FOR NO KEY UPDATE;
 
 -- name: ConfirmRegistration :one
 UPDATE registrations SET status = 'confirmed', confirmed_at = now(), oversold = $2

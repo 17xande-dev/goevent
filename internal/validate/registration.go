@@ -30,6 +30,12 @@ func Phone(errs FormErrors, field, phone string) {
 	if phone == "" {
 		return
 	}
+	// Fifteen digits allow only so much punctuation between them; without this a
+	// number padded with spaces could be any length at all.
+	if len(phone) > 40 {
+		errs.Add(field, "Does not look like a phone number.")
+		return
+	}
 	digits := 0
 	for _, r := range phone {
 		switch {
