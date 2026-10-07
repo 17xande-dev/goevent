@@ -1,0 +1,105 @@
+{{/*
+  The door. The scan box is autofocused and every action redirects back here, so
+  a keyboard-style QR scanner can be pointed at ticket after ticket without anyone
+  touching the screen. The counts poll so that two doors see one room.
+*/}}
+{{define "content"}}
+{{$e := .Event}}
+
+<a class="back" href="/admin/events/{{$e.ID}}">← {{$e.Title}}</a>
+<div class="page-head">
+  <h1>Check-in</h1>
+  {{template "checkin_counts" .}}
+</div>
+
+{{with .Last}}
+  {{if eq $.Result "in"}}
+  <p class="notice door ok" role="status"><strong>{{.Name}}</strong> is checked in. <span class="muted">{{.TicketName}} · {{.Reference}}</span></p>
+  {{else if eq $.Result "already"}}
+  <p class="notice door problem" role="alert"><strong>{{.Name}}</strong> was already checked in{{with .CheckedInAt}} at {{($e.Local .).Format "15:04"}}{{end}}.
+    <span class="muted">{{.TicketName}} · {{.Reference}}</span></p>
+  {{else if eq $.Result "cancelled"}}
+  <p class="notice door problem" role="alert"><strong>{{.Name}}</strong>'s ticket was cancelled. Send them to the registration desk.</p>
+  {{else if eq $.Result "unpaid"}}
+  <p class="notice door problem" role="alert"><strong>{{.Name}}</strong>'s registration
+    <a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a> is still awaiting payment. Send them to the registration desk.</p>
+  {{else if eq $.Result "undone"}}
+  <p class="notice" role="status"><strong>{{.Name}}</strong>'s check-in was undone.</p>
+  {{end}}
+{{else}}
+  {{if eq .Result "unknown"}}
+  <p class="notice door problem" role="alert">That ticket is not for this event.</p>
+  {{else if eq .Result "invalid"}}
+  <p class="notice door problem" role="alert">That code is not a ticket this system made. Look them up by name instead.</p>
+  {{end}}
+{{end}}
+
+<form class="panel scan" method="post" action="/admin/events/{{$e.ID}}/checkin">
+  {{template "csrf" .CSRFToken}}
+  <label for="code">Scan a ticket, or type a name or reference</label>
+  <div class="row">
+    <input id="code" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus required>
+    <button type="submit">Go</button>
+  </div>
+</form>
+
+{{if .Query}}
+<h2>Matching “{{.Query}}”</h2>
+{{if .Results}}
+<div class="scroll-x">
+  <table>
+    {{/* Two columns, not four: on a phone at the door the button is the column
+         that matters, and a wider table pushes it off the edge. */}}
+    <thead><tr><th>Name</th><th></th></tr></thead>
+    <tbody>
+    {{range .Results}}
+      <tr>
+        <td>{{.Name}}<br><small class="muted">{{.TicketName}} · <a href="/admin/registrations/{{.RegistrationID}}">{{.Reference}}</a></small></td>
+        <td class="num">
+          {{if .CanEnter}}
+          <form method="post" action="/admin/events/{{$e.ID}}/checkin">
+            {{template "csrf" $.CSRFToken}}
+            <input type="hidden" name="attendee" value="{{.AttendeeID}}">
+            <input type="hidden" name="q" value="{{$.Query}}">
+            <button type="submit">Check in</button>
+          </form>
+          {{else if .CheckedInAt}}
+          <form method="post" action="/admin/events/{{$e.ID}}/checkin/{{.AttendeeID}}/undo">
+            {{template "csrf" $.CSRFToken}}
+            <input type="hidden" name="q" value="{{$.Query}}">
+            <small class="muted">In at {{($e.Local .CheckedInAt).Format "15:04"}}</small>
+            <button class="quiet" type="submit">Undo</button>
+          </form>
+          {{else if ne .AttendeeStatus "active"}}
+          <span class="badge problem">Cancelled</span>
+          {{else}}
+          <span class="badge problem">{{.RegistrationStatus.Label}}</span>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">Nobody on this event matches.</p>
+{{end}}
+{{end}}
+
+{{with .Last}}{{if and .CheckedInAt (or (eq $.Result "in") (eq $.Result "already"))}}
+<form method="post" action="/admin/events/{{$e.ID}}/checkin/{{.AttendeeID}}/undo">
+  {{template "csrf" $.CSRFToken}}
+  <button class="quiet" type="submit">Undo {{.Name}}'s check-in</button>
+</form>
+{{end}}{{end}}
+
+{{end}}
+
+{{/* The counts, polled. The trigger rides on the element the response replaces. */}}
+{{define "checkin_counts"}}
+<p class="door-counts" hx-get="/admin/events/{{.Event.ID}}/checkin/counts" hx-trigger="every 10s" hx-swap="outerHTML">
+  <strong>{{.Counts.CheckedIn}}</strong> of {{.Counts.Expected}} in
+</p>
+{{end}}
+
+{{define "checkin_counts_fragment"}}{{template "checkin_counts" .}}{{end}}

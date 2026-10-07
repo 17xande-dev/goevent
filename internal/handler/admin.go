@@ -279,6 +279,12 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	// An event's attendees as CSV: read, because it is a view of the
 	// registrations, and buffered — see adminEventExport.
 	admin("GET /admin/events/{id}/attendees.csv", auth.PermRead, h.adminEventExport)
+	// The door: see admin_checkin.go. checkin rather than read, because a viewer
+	// has no business at the door, and the role made for volunteers has it.
+	admin("GET /admin/events/{id}/checkin", auth.PermCheckin, h.adminCheckin)
+	admin("GET /admin/events/{id}/checkin/counts", auth.PermCheckin, h.adminCheckinCounts)
+	admin("POST /admin/events/{id}/checkin", auth.PermCheckin, h.adminCheckinScan)
+	admin("POST /admin/events/{id}/checkin/{attendeeID}/undo", auth.PermCheckin, h.adminCheckinUndo)
 	// Registrations. See admin_registrations.go. Payments recorded here confirm
 	// a registration exactly as a gateway's do.
 	admin("GET /admin/registrations", auth.PermRead, h.adminRegistrationList)

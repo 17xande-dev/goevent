@@ -30,7 +30,8 @@ event had filled. They are confirmed; decide whether to make room or refund.
   <dt>Received</dt><dd>{{.Currency}} {{money .Stats.PaidCents}}</dd>
   <dt>Lists</dt>
   <dd><a href="/admin/registrations?event={{.Event.ID}}">Registrations</a> ·
-      <a href="/admin/events/{{.Event.ID}}/attendees.csv">Download attendees (CSV)</a></dd>
+      <a href="/admin/events/{{.Event.ID}}/attendees.csv">Download attendees (CSV)</a>{{if .Can "checkin"}} ·
+      <a href="/admin/events/{{.Event.ID}}/checkin">Check-in</a>{{end}}</dd>
 </dl>
 
 {{if and $write .Next}}

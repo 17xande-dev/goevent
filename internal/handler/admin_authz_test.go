@@ -69,6 +69,8 @@ func TestAdminRoutes_RolesGetTheirPermissions(t *testing.T) {
 		{auth.PermUsersWrite, http.MethodGet, "/admin/users", nil},
 		// No such registration: a permitted role gets 404, any other 403.
 		{auth.PermRegistrationsWrite, http.MethodPost, "/admin/registrations/3f2504e0-4f89-41d3-9a0c-0305e82c3301/cancel", url.Values{}},
+		// The door, for an event that does not exist: 404 for a permitted role.
+		{auth.PermCheckin, http.MethodGet, "/admin/events/3f2504e0-4f89-41d3-9a0c-0305e82c3301/checkin", nil},
 	}
 
 	// Nothing may be enforced that this matrix does not cover: a permission

@@ -336,6 +336,7 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 		// And the admin's view of what just happened.
 		"/admin/registrations", "/admin/registrations/" + onlyPendingRegistration(t, s),
 		"/admin/events/" + pe.ID,
+		"/admin/events/" + pe.ID + "/checkin?q=a&result=unknown",
 	} {
 		res, page := get(t, s.srv, path)
 		if res.StatusCode != http.StatusOK {

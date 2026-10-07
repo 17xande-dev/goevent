@@ -56,6 +56,7 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Listed, error) {
 		p.Status = &st
 	}
 	if q := strings.TrimSpace(f.Search); q != "" {
+		q = likeEscape(q)
 		p.Search = &q
 	}
 	rows, err := s.q.ListRegistrations(ctx, p)

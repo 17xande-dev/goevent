@@ -171,3 +171,51 @@ SELECT ans.registration_id, ans.attendee_id, ans.question_id, ans.value
 FROM answers ans
 JOIN registrations r ON r.id = ans.registration_id
 WHERE r.event_id = $1;
+
+-- Check-in is one statement: the ticket must be this event's, active, on a
+-- confirmed registration, and not yet checked in. Two volunteers scanning the
+-- same ticket at once therefore admit it once; the second gets no row and is
+-- told when it was checked in.
+-- name: CheckIn :one
+UPDATE attendees a SET checked_in_at = now(), checked_in_by = @by
+FROM registrations r
+WHERE a.id = @attendee_id AND a.registration_id = r.id AND r.event_id = @event_id
+  AND r.status = 'confirmed' AND a.status = 'active' AND a.checked_in_at IS NULL
+RETURNING a.checked_in_at;
+
+-- name: UndoCheckIn :execrows
+UPDATE attendees a SET checked_in_at = NULL, checked_in_by = NULL
+FROM registrations r
+WHERE a.id = @attendee_id AND a.registration_id = r.id AND r.event_id = @event_id
+  AND a.checked_in_at IS NOT NULL;
+
+-- An attendee with their registration, for saying why a scan was refused.
+-- name: AttendeeForEvent :one
+SELECT a.id, a.first_name, a.last_name, a.ticket_name, a.status, a.checked_in_at,
+    r.id AS registration_id, r.reference, r.status AS registration_status, r.event_id
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE a.id = $1;
+
+-- The door's search: attendees whose name, or whose registration's reference
+-- or contact, matches. Pending and cancelled registrations are included so a
+-- volunteer can say why somebody cannot come in, not just that they are absent.
+-- name: SearchAttendees :many
+SELECT a.id, a.first_name, a.last_name, a.ticket_name, a.status, a.checked_in_at,
+    r.id AS registration_id, r.reference, r.status AS registration_status, r.event_id
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = @event_id AND r.status <> 'expired'
+  AND (a.first_name || ' ' || a.last_name ILIKE '%' || @search::text || '%'
+       OR r.reference ILIKE '%' || @search::text || '%'
+       OR (r.contact_first_name || ' ' || r.contact_last_name) ILIKE '%' || @search::text || '%'
+       OR r.contact_email ILIKE '%' || @search::text || '%')
+ORDER BY a.last_name, a.first_name
+LIMIT 50;
+
+-- name: CheckInCounts :one
+SELECT count(*) FILTER (WHERE a.status = 'active')::int AS expected,
+    count(*) FILTER (WHERE a.status = 'active' AND a.checked_in_at IS NOT NULL)::int AS checked_in
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND r.status = 'confirmed';

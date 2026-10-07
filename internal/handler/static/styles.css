@@ -1193,3 +1193,34 @@ img {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* --- Check-in ------------------------------------------------------------ */
+
+/* The door's answer is read at arm's length by a volunteer with a queue in front
+   of them, so it is large and its colour carries it. */
+.notice.door {
+  max-inline-size: none;
+  font-size: var(--text-large);
+  padding-block: var(--gap);
+
+  &.ok {
+    border-inline-start-width: 6px;
+    background: color-mix(in oklab, var(--accent) 10%, var(--paper-sunk));
+  }
+
+  &.problem {
+    border-inline-start-width: 6px;
+    background: color-mix(in oklab, var(--warn) 10%, var(--paper-sunk));
+  }
+}
+
+.scan .row > input {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  font-size: 1.25rem;
+}
+
+.door-counts {
+  margin: 0;
+  font-size: var(--text-large);
+}

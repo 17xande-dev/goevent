@@ -10,6 +10,46 @@ import (
 	"time"
 )
 
+const attendeeForEvent = `-- name: AttendeeForEvent :one
+SELECT a.id, a.first_name, a.last_name, a.ticket_name, a.status, a.checked_in_at,
+    r.id AS registration_id, r.reference, r.status AS registration_status, r.event_id
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE a.id = $1
+`
+
+type AttendeeForEventRow struct {
+	ID                 string
+	FirstName          string
+	LastName           string
+	TicketName         string
+	Status             string
+	CheckedInAt        *time.Time
+	RegistrationID     string
+	Reference          string
+	RegistrationStatus string
+	EventID            string
+}
+
+// An attendee with their registration, for saying why a scan was refused.
+func (q *Queries) AttendeeForEvent(ctx context.Context, id string) (AttendeeForEventRow, error) {
+	row := q.db.QueryRow(ctx, attendeeForEvent, id)
+	var i AttendeeForEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.FirstName,
+		&i.LastName,
+		&i.TicketName,
+		&i.Status,
+		&i.CheckedInAt,
+		&i.RegistrationID,
+		&i.Reference,
+		&i.RegistrationStatus,
+		&i.EventID,
+	)
+	return i, err
+}
+
 const cancelAttendee = `-- name: CancelAttendee :execrows
 UPDATE attendees SET status = 'cancelled'
 WHERE id = $1 AND registration_id = $2 AND status = 'active'
@@ -59,6 +99,51 @@ func (q *Queries) CancelRegistration(ctx context.Context, id string) (Registrati
 		&i.ConfirmedAt,
 		&i.CancelledAt,
 	)
+	return i, err
+}
+
+const checkIn = `-- name: CheckIn :one
+UPDATE attendees a SET checked_in_at = now(), checked_in_by = $1
+FROM registrations r
+WHERE a.id = $2 AND a.registration_id = r.id AND r.event_id = $3
+  AND r.status = 'confirmed' AND a.status = 'active' AND a.checked_in_at IS NULL
+RETURNING a.checked_in_at
+`
+
+type CheckInParams struct {
+	By         *string
+	AttendeeID string
+	EventID    string
+}
+
+// Check-in is one statement: the ticket must be this event's, active, on a
+// confirmed registration, and not yet checked in. Two volunteers scanning the
+// same ticket at once therefore admit it once; the second gets no row and is
+// told when it was checked in.
+func (q *Queries) CheckIn(ctx context.Context, arg CheckInParams) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, checkIn, arg.By, arg.AttendeeID, arg.EventID)
+	var checked_in_at *time.Time
+	err := row.Scan(&checked_in_at)
+	return checked_in_at, err
+}
+
+const checkInCounts = `-- name: CheckInCounts :one
+SELECT count(*) FILTER (WHERE a.status = 'active')::int AS expected,
+    count(*) FILTER (WHERE a.status = 'active' AND a.checked_in_at IS NOT NULL)::int AS checked_in
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND r.status = 'confirmed'
+`
+
+type CheckInCountsRow struct {
+	Expected  int
+	CheckedIn int
+}
+
+func (q *Queries) CheckInCounts(ctx context.Context, eventID string) (CheckInCountsRow, error) {
+	row := q.db.QueryRow(ctx, checkInCounts, eventID)
+	var i CheckInCountsRow
+	err := row.Scan(&i.Expected, &i.CheckedIn)
 	return i, err
 }
 
@@ -1033,4 +1118,90 @@ func (q *Queries) RegistrationByCheckoutKey(ctx context.Context, arg Registratio
 		&i.CancelledAt,
 	)
 	return i, err
+}
+
+const searchAttendees = `-- name: SearchAttendees :many
+SELECT a.id, a.first_name, a.last_name, a.ticket_name, a.status, a.checked_in_at,
+    r.id AS registration_id, r.reference, r.status AS registration_status, r.event_id
+FROM attendees a
+JOIN registrations r ON r.id = a.registration_id
+WHERE r.event_id = $1 AND r.status <> 'expired'
+  AND (a.first_name || ' ' || a.last_name ILIKE '%' || $2::text || '%'
+       OR r.reference ILIKE '%' || $2::text || '%'
+       OR (r.contact_first_name || ' ' || r.contact_last_name) ILIKE '%' || $2::text || '%'
+       OR r.contact_email ILIKE '%' || $2::text || '%')
+ORDER BY a.last_name, a.first_name
+LIMIT 50
+`
+
+type SearchAttendeesParams struct {
+	EventID string
+	Search  string
+}
+
+type SearchAttendeesRow struct {
+	ID                 string
+	FirstName          string
+	LastName           string
+	TicketName         string
+	Status             string
+	CheckedInAt        *time.Time
+	RegistrationID     string
+	Reference          string
+	RegistrationStatus string
+	EventID            string
+}
+
+// The door's search: attendees whose name, or whose registration's reference
+// or contact, matches. Pending and cancelled registrations are included so a
+// volunteer can say why somebody cannot come in, not just that they are absent.
+func (q *Queries) SearchAttendees(ctx context.Context, arg SearchAttendeesParams) ([]SearchAttendeesRow, error) {
+	rows, err := q.db.Query(ctx, searchAttendees, arg.EventID, arg.Search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchAttendeesRow{}
+	for rows.Next() {
+		var i SearchAttendeesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FirstName,
+			&i.LastName,
+			&i.TicketName,
+			&i.Status,
+			&i.CheckedInAt,
+			&i.RegistrationID,
+			&i.Reference,
+			&i.RegistrationStatus,
+			&i.EventID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const undoCheckIn = `-- name: UndoCheckIn :execrows
+UPDATE attendees a SET checked_in_at = NULL, checked_in_by = NULL
+FROM registrations r
+WHERE a.id = $1 AND a.registration_id = r.id AND r.event_id = $2
+  AND a.checked_in_at IS NOT NULL
+`
+
+type UndoCheckInParams struct {
+	AttendeeID string
+	EventID    string
+}
+
+func (q *Queries) UndoCheckIn(ctx context.Context, arg UndoCheckInParams) (int64, error) {
+	result, err := q.db.Exec(ctx, undoCheckIn, arg.AttendeeID, arg.EventID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
