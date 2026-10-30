@@ -46,6 +46,10 @@ func TestPNG_HasAQuietZoneAndDarkModules(t *testing.T) {
 func TestPNG_DecodesBackToTheCode(t *testing.T) {
 	zbar, err := exec.LookPath("zbarimg")
 	if err != nil {
+		// REQUIRE_ZBAR (set by `make test`) turns the skip into a failure.
+		if os.Getenv("REQUIRE_ZBAR") != "" {
+			t.Fatal("zbarimg not installed, and REQUIRE_ZBAR is set")
+		}
 		t.Skip("zbarimg not installed")
 	}
 	b, err := PNG(code, 6)

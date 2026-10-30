@@ -45,6 +45,11 @@ func EmptyPool(t *testing.T) *pgxpool.Pool {
 
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
+		// REQUIRE_DB (set by `make test`) turns the skip into a failure, so a
+		// missing database cannot make a run look green.
+		if os.Getenv("REQUIRE_DB") != "" {
+			t.Fatal("TEST_DATABASE_URL not set, and REQUIRE_DB is set")
+		}
 		t.Skip("TEST_DATABASE_URL not set; skipping database tests")
 	}
 

@@ -52,7 +52,10 @@ server through a tunnel and set `PAYFAST_NOTIFY_URL` to the tunnel's address plu
 | `make down` | Stop it. `make down ARGS=-v` also deletes the database volume |
 | `make logs` | Follow the server's logs |
 | `make run` | Run the server on the host against the Compose Postgres and mailpit |
-| `make test` | Every test, including the database-backed ones, with `-count=1` |
+| `make test` | Every test, including the database-backed ones, with `-race` and `-count=1`; skips of the database and QR-decoder tests fail, and the skip count is printed |
+| `make gate` | `fmt-check`, `vet`, `build`, `sqlc-check`, `test`, then `vulncheck` |
+| `make fmt-check` | Fail, listing the files, if a tracked Go file is not gofmt-clean or does not parse |
+| `make vulncheck-install`, `make vulncheck` | Install the pinned `govulncheck` (`GOVULNCHECK_VERSION`), and fail on a reachable known vulnerability |
 | `make vet`, `make fmt`, `make tidy`, `make build` | `go vet`, `go fmt`, `go mod tidy`, `go build` over `./...` |
 | `make psql` | A `psql` shell in the Compose database |
 | `make migrate` | Apply pending migrations without starting the server |
@@ -65,24 +68,23 @@ server through a tunnel and set `PAYFAST_NOTIFY_URL` to the tunnel's address plu
 | `make image` | Build the production image locally, tagged `TAG` |
 | `make publish` | Build and push `TAG` and `latest` to GHCR; see [Publishing an image](deploy/README.md#publishing-an-image) |
 
-The gate before a commit:
+The gate before a commit is one target:
 
 ```sh
-gofmt -l . ; go vet ./... && make sqlc-check && make test
+make gate     # fmt-check, vet, build, sqlc-check, test (-race), then vulncheck
 ```
 
-There is no hosted CI for now. Before a commit, run the gate yourself, with `make up`
-providing Postgres:
-
-```sh
-gofmt -l . ; go vet ./... && make sqlc-check && make test
-```
+There is no hosted CI for now, so run it yourself, with `make up` (or just
+`docker compose up -d --wait postgres`) providing Postgres. `make test` sets
+`REQUIRE_DB` and `REQUIRE_ZBAR`, so a missing database or `zbarimg` fails the run instead
+of skipping, and it prints how many tests skipped (the S3 contract test, unless
+`BLOB_TEST_ENDPOINT` is set). `make vulncheck` needs `make vulncheck-install` once.
 
 ## Tests
 
 ```sh
 make test          # TEST_DATABASE_URL defaults to the Compose database on port 5433
-go test ./...      # database-backed tests skip when TEST_DATABASE_URL is unset
+go test ./...      # database-backed tests skip when TEST_DATABASE_URL is unset (set REQUIRE_DB=1 to fail instead)
 ```
 
 Database tests get a private schema each ([`internal/dbtest`](../internal/dbtest/dbtest.go)):
@@ -94,7 +96,8 @@ can share one database.
 [`internal/ticket`](../internal/ticket/qr_test.go) draws a ticket's QR code and reads it
 back with a real decoder, because drawing the right number of squares in the wrong places
 would pass every other test and fail at the door. It is skipped when `zbarimg` is not on
-the `PATH`. Install the `zbar` package (`zbar-tools` on Debian and Ubuntu) to run it.
+the `PATH` (a failure with `REQUIRE_ZBAR=1`, which `make test` sets). Install the `zbar`
+package (`zbar-tools` on Debian and Ubuntu) to run it.
 
 ### Trying a real S3 server
 

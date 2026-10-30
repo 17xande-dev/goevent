@@ -1,3 +1,6 @@
+# bash, not sh: the hashpw recipe's `read -rs` and the test recipe's pipefail need it.
+SHELL := bash
+.SHELLFLAGS := -o pipefail -c
 COMPOSE ?= docker compose
 export LOCAL_UID := $(shell id -u)
 export LOCAL_GID := $(shell id -g)
@@ -68,6 +71,17 @@ THEME_RELOAD ?= true
 SQLC_VERSION ?= v1.31.1
 SQLC ?= sqlc
 
+# govulncheck is pinned in the Makefile rather than go.mod for the same reason as
+# sqlc: it is a build-time tool and would drag its dependencies into go.mod.
+# Pin carefully: v1.1.x crashes on Go 1.27; v1.9.0 works.
+GOVULNCHECK_VERSION ?= v1.9.0
+
+# `make test` turns a skipped database or QR-decoder test into a failure, so a
+# missing Postgres or zbar cannot read as a pass. Set either to empty to allow the
+# skip (`make test REQUIRE_ZBAR=`).
+REQUIRE_DB ?= 1
+REQUIRE_ZBAR ?= 1
+
 # The published image. There is no CI publishing this — see "publish" below —
 # so TAG defaults to a real version tag when HEAD has one (git tag v1.2.3) and
 # to the short commit sha otherwise, which `publish` then refuses: goevent is
@@ -82,7 +96,7 @@ TAG ?= $(shell git describe --tags --exact-match 2>/dev/null || echo $(GIT_SHA))
 PLATFORM ?= linux/amd64
 
 .PHONY: up local-dirs down logs run build test vet fmt tidy psql migrate migrate-status hashpw \
-	check-config sqlc sqlc-check sqlc-install image check-clean check-tagged publish
+	check-config sqlc sqlc-check sqlc-install vulncheck vulncheck-install fmt-check gate image check-clean check-tagged publish
 
 ## up: build and start the whole local stack
 up: local-dirs
@@ -152,10 +166,36 @@ sqlc-install:
 build:
 	go build ./...
 
-## test: run every test, including the database-backed ones
-# -count=1: a cached pass after an environment change is not a pass.
+## fmt-check: fail, listing the files, if any tracked Go source is not gofmt-clean
+# Scoped to tracked files so untracked scratch under .local/ cannot fail it, and
+# it fails on a file gofmt cannot parse as well as on one it would change.
+fmt-check:
+	@bad="$$(gofmt -l $$(git ls-files '*.go') 2>&1)"; rc=$$?; \
+	if [ $$rc -ne 0 ] || [ -n "$$bad" ]; then echo "not gofmt-clean (or not parseable):"; echo "$$bad"; exit 1; fi
+
+## vulncheck-install: install the pinned govulncheck
+vulncheck-install:
+	go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+## vulncheck: fail if a reachable known vulnerability affects the build
+vulncheck:
+	govulncheck ./...
+
+## test: run every test, including the database-backed ones, under the race detector
+# -count=1: a cached pass after an environment change is not a pass. Prints only
+# the package results, failures and skips, then how many tests skipped; with
+# REQUIRE_DB and REQUIRE_ZBAR set (the default) a skipped database or zbar test
+# fails instead.
 test:
-	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./...
+	@out="$$(mktemp)"; trap 'rm -f "$$out"' EXIT; \
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" REQUIRE_DB="$(REQUIRE_DB)" REQUIRE_ZBAR="$(REQUIRE_ZBAR)" \
+		go test -count=1 -race -v ./... 2>&1 | tee "$$out" | grep -E '^(ok|FAIL|panic|--- FAIL|--- SKIP)|^\s+--- SKIP' ; \
+	rc=$${PIPESTATUS[0]}; \
+	echo "skipped tests: $$(grep -cE -- '--- SKIP' "$$out")"; \
+	exit $$rc
+
+## gate: everything to run before a commit; vulncheck runs last so a newly published CVE cannot hide the test results
+gate: fmt-check vet build sqlc-check test vulncheck
 
 vet:
 	go vet ./...

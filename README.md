@@ -63,7 +63,7 @@ make run
 ## Development
 
 ```sh
-make test          # every test, including the database-backed ones (needs make up or make run's postgres)
+make test          # every test under -race, including the database-backed ones (needs make up or make run's postgres)
 make sqlc          # regenerate internal/db/gen after editing internal/db/queries or migrations
 make sqlc-check    # fail if the generated code is stale
 ```
@@ -71,7 +71,7 @@ make sqlc-check    # fail if the generated code is stale
 The gate before a commit:
 
 ```sh
-gofmt -l . ; go vet ./... && make sqlc-check && make test
+make gate          # fmt-check, vet, build, sqlc-check, test, then vulncheck
 ```
 
 ## Decisions
