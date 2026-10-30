@@ -134,8 +134,12 @@ The burst is a third of the allowance, minimum two, so `10/min` is three attempt
 and then one every six seconds. A refusal is `429` with `Retry-After`: a page for people,
 a bare status for the gateway. Setting a limit to `0` disables it and logs a warning. Only
 the POST on `/admin/login` is limited, so an operator can always read the page explaining
-why. Idle buckets are evicted lazily during ordinary requests, so the map cannot grow
-without bound as an attacker cycles addresses.
+why. IPv4 clients are keyed by their address and IPv6 clients by their /64 (an
+IPv4-mapped address shares its IPv4 bucket), so a single IPv6 prefix cannot mint a bucket
+per request. Idle buckets are evicted lazily during ordinary requests, and each limiter holds
+at most 10 000 buckets: at the cap a sweep runs (at most once every five seconds) and a new
+client still finding the map full is refused with `429`, so a flood of fresh addresses cannot
+switch the limiter off while existing clients are unaffected.
 
 The limits key on the client address, so `CLIENT_IP_SOURCE` must describe what is in front
 of the server. Naming a header nothing sets lets a client choose its own address.
