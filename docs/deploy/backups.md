@@ -165,6 +165,37 @@ sudo docker compose exec -T postgres dropdb -U goevent restore_check
 The live site is untouched throughout. Do the same with a dump fetched from the offsite
 bucket now and then, since that is the copy you will need on the day the server is gone.
 
+## Moving an existing install from Postgres 17 to 18
+
+The deployment files in this release run Postgres 18, and a 17 data directory cannot be
+opened by it, so an install created from an older release moves by dump and restore.
+Postgres 18 also keeps its data one level deeper: the volume is now mounted at
+`/var/lib/postgresql`, not `/var/lib/postgresql/data`. Copy the new `compose.yaml` over
+the old one before starting it, because the old mount path with the 18 image would put the
+database on an anonymous volume that is lost when the container is recreated. Plan for a
+few minutes without the site.
+
+```sh
+sudo ./backup.sh
+sudo docker compose stop server
+sudo docker compose exec -T postgres pg_dump -U goevent goevent > /root/goevent-pg17.sql
+sudo docker compose down                      # keeps the volume, for now
+sudo docker volume rm goevent_pgdata          # the project name is goevent in both deployments
+# copy the new compose.yaml into place here
+sudo docker compose up -d --wait postgres
+sudo docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U goevent goevent < /root/goevent-pg17.sql >/dev/null
+sudo docker compose up -d
+```
+
+If the restore says the database is starting up, wait a few seconds and run it again: the
+image restarts once while it initialises. Check
+`docker compose exec postgres psql -U goevent -c 'select count(*) from registrations'`
+against what you expect before deleting `/root/goevent-pg17.sql` and the backup taken
+first. Removing the volume is the point of no return; the dump is what you are left with.
+
+For a local development stack, run the same dump, `docker compose down`,
+`docker volume rm goevent_pgdata` and restore with the repository's `compose.yaml`.
+
 ## What this does not give you
 
 These are nightly snapshots: restoring loses up to a day. Point-in-time recovery needs

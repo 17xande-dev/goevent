@@ -13,7 +13,7 @@ fill in one `.env`, and start with `docker compose up -d`.
 | **Mail** | Any SMTP provider | Microsoft 365, through Microsoft Graph |
 | **Pick it when** | You have a server with a public address. The default | The server has no public address (a home lab, an office), or you would rather open no ports; your domain is on Cloudflare; your mail is Microsoft 365 |
 
-Both run Postgres 17 beside the server, from the published image
+Both run Postgres 18 beside the server, from the published image
 `ghcr.io/17xande-dev/goevent:${GOEVENT_VERSION}`, and both include a `backup.sh` for a
 nightly database dump to the server's own disk. [Backups](backups.md) copies those off it
 and covers restoring.
