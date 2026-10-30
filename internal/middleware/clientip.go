@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -78,12 +79,12 @@ func ClientIP(r *http.Request, source ClientIPSource) string {
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
 			first, _, _ := strings.Cut(forwarded, ",")
 			if ip := strings.TrimSpace(first); ip != "" {
-				return unbracket(ip)
+				return bareIP(ip)
 			}
 		}
 	case ClientIPCloudflare:
 		if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
-			return unbracket(ip)
+			return bareIP(ip)
 		}
 	}
 
@@ -93,6 +94,22 @@ func ClientIP(r *http.Request, source ClientIPSource) string {
 		return unbracket(strings.TrimSpace(r.RemoteAddr))
 	}
 	return host
+}
+
+// bareIP reduces a header value to the address alone. Some load balancers write
+// "ip:port" (or "[v6]:port") rather than a bare address; left alone, that string
+// is not an address, so the rate limiter would key on it and give every source port
+// its own bucket, and the payment callback's source-IP check would reject a genuine
+// notification. A value that is neither an address nor host:port is returned
+// unchanged, as before.
+func bareIP(s string) string {
+	if _, err := netip.ParseAddr(unbracket(s)); err == nil {
+		return unbracket(s)
+	}
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		return host
+	}
+	return unbracket(s)
 }
 
 // unbracket strips the brackets an IPv6 address may arrive wrapped in, since

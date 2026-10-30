@@ -162,12 +162,7 @@ func run() error {
 	waitWorker := h.StartMailWorker(workerCtx)
 	defer func() { stopWorker(); waitWorker() }()
 
-	srv := &http.Server{
-		Addr:              net.JoinHostPort("", cfg.Port),
-		Handler:           routes(cfg, h, gateways, users, pool, log),
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	srv := newServer(net.JoinHostPort("", cfg.Port), routes(cfg, h, gateways, users, pool, log))
 
 	errc := make(chan error, 1)
 	go func() {
@@ -516,6 +511,20 @@ func newBlobStorage(cfg config.Config, log *slog.Logger) (blob.Storage, error) {
 	log.Info("object storage configured", "endpoint", cfg.Blob.Endpoint,
 		"bucket", cfg.Blob.Bucket, "public_base", cfg.Blob.PublicBaseURL)
 	return storage, nil
+}
+
+// newServer is the http.Server settings, apart from the handler, so a test can
+// exercise them.
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		// The default is 1 MB per request, and a rate-limit key can come from a
+		// header. Nothing this server sends or sets comes near 64 KiB.
+		MaxHeaderBytes: 64 << 10,
+		IdleTimeout:    60 * time.Second,
+	}
 }
 
 func routes(cfg config.Config, h *handler.Handler, gateways payment.Registry, users *auth.Store, pool *pgxpool.Pool, log *slog.Logger) http.Handler {

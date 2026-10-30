@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/payment"
 )
 
@@ -223,6 +224,38 @@ func TestITN_RejectsUnknownIP(t *testing.T) {
 	for _, ip := range []string{"197.97.145.144", "197.97.145.159", "41.74.179.200", "102.216.36.5", "144.126.193.139"} {
 		if _, err := g.ParseCallback(t.Context(), notify(body, ip)); err != nil {
 			t.Errorf("source IP %q was rejected: %v", ip, err)
+		}
+	}
+}
+
+// A proxy that writes "ip:port" into the client-address header must not make
+// PayFast's genuine notifications fail the source check: the address the handler
+// passes in is the middleware's bareIP-reduced one.
+func TestITN_SourceCheckAcceptsPortedForwardedAddresses(t *testing.T) {
+	validate, _ := validatorSaying(t, "VALID")
+	g := testGateway(t, func(c *Config) { c.ValidateURL = validate })
+	body := encodeITN(itnFieldsFor("3f2504e0-4f89-41d3-9a0c-0305e82c3301", "299.00"), g.cfg.Passphrase)
+
+	for _, tc := range []struct {
+		source middleware.ClientIPSource
+		header string
+		value  string
+		wantOK bool
+	}{
+		{middleware.ClientIPForwarded, "X-Forwarded-For", "197.97.145.150:4711, 10.0.0.1", true},
+		{middleware.ClientIPCloudflare, "CF-Connecting-IP", "197.97.145.150:4711", true},
+		{middleware.ClientIPForwarded, "X-Forwarded-For", "198.51.100.7:4711", false},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/payments/payfast/callback", nil)
+		r.RemoteAddr = "10.0.0.9:1234"
+		r.Header.Set(tc.header, tc.value)
+		ip := middleware.ClientIP(r, tc.source)
+		_, err := g.ParseCallback(t.Context(), notify(body, ip))
+		if tc.wantOK && err != nil {
+			t.Errorf("%s %q (-> %q) was rejected: %v", tc.header, tc.value, ip, err)
+		}
+		if !tc.wantOK && !errors.Is(err, ErrSourceIP) {
+			t.Errorf("%s %q (-> %q): error = %v, want ErrSourceIP", tc.header, tc.value, ip, err)
 		}
 	}
 }
