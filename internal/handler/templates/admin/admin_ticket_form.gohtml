@@ -62,6 +62,7 @@
     </div>
     {{if not .IsNew}}
     <div class="field">
+      <input type="hidden" name="archived_was" value="{{.Form.Get "archived_was"}}">
       <label><input type="checkbox" name="archived" value="1" {{if .Form.On "archived"}}checked{{end}}>
         Archived — retired, kept only for people who already hold one</label>
     </div>

@@ -118,7 +118,7 @@ func (h *Handler) adminTicketUpdate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if _, err := h.events.UpdateTicketType(r.Context(), t); err != nil {
+	if _, err := h.events.UpdateTicketType(r.Context(), t, archivedChange(form)); err != nil {
 		h.storeError(w, r, err)
 		return
 	}
@@ -215,7 +215,7 @@ func (h *Handler) adminQuestionUpdate(w http.ResponseWriter, r *http.Request) {
 		h.renderQuestion(w, r, http.StatusUnprocessableEntity, e, stored.ID, form, q.TicketTypeIDs, errs)
 		return
 	}
-	if _, err := h.events.UpdateQuestion(r.Context(), q); err != nil {
+	if _, err := h.events.UpdateQuestion(r.Context(), q, archivedChange(form)); err != nil {
 		h.storeError(w, r, err)
 		return
 	}
@@ -256,6 +256,17 @@ func (h *Handler) renderQuestion(w http.ResponseWriter, r *http.Request, status 
 	})
 }
 
+// archivedChange is what the archived checkbox asks for: nil when it is as it was
+// when the form was loaded (archived_was), otherwise the new value. Only a
+// deliberate change is written, so a stale form does not undo another admin's.
+func archivedChange(f formValues) *bool {
+	if f.On("archived") == f.On("archived_was") {
+		return nil
+	}
+	v := f.On("archived")
+	return &v
+}
+
 func ticketValues(e events.Event, t events.TicketType) formValues {
 	loc := e.Location()
 	return formValues{
@@ -267,6 +278,7 @@ func ticketValues(e events.Event, t events.TicketType) formValues {
 		"sales_end_at":         formatLocal(t.SalesEndAt, loc),
 		"hidden":               checkbox(t.Hidden),
 		"position":             strconv.Itoa(t.Position),
+		"archived":             checkbox(t.Archived), "archived_was": checkbox(t.Archived),
 	}
 }
 
@@ -315,7 +327,7 @@ func questionValues(q events.Question) formValues {
 	return formValues{
 		"scope": string(q.Scope), "kind": string(q.Kind), "label": q.Label, "help": q.Help,
 		"options":  strings.Join(q.Options, "\n"),
-		"required": checkbox(q.Required),
+		"required": checkbox(q.Required), "archived": checkbox(q.Archived), "archived_was": checkbox(q.Archived),
 		"position": strconv.Itoa(q.Position),
 	}
 }

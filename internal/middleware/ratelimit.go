@@ -124,16 +124,7 @@ func RateLimit(cfg RateLimitConfig, source ClientIPSource, log *slog.Logger) Mid
 		log = slog.Default()
 	}
 
-	l := &ipLimiter{
-		limit:    rate.Every(cfg.Every),
-		burst:    cfg.Burst,
-		ttl:      cfg.TTL,
-		buckets:  make(map[string]*bucket),
-		lastKeep: time.Now(),
-		max:      maxBuckets,
-		name:     cfg.Name,
-		log:      log,
-	}
+	l := newIPLimiter(cfg, log)
 	retryAfter := strconv.Itoa(max(1, int(cfg.Every.Seconds())))
 
 	return func(next http.Handler) http.Handler {
@@ -157,6 +148,21 @@ func RateLimit(cfg RateLimitConfig, source ClientIPSource, log *slog.Logger) Mid
 			}
 			http.Error(w, "too many requests; slow down and try again", http.StatusTooManyRequests)
 		})
+	}
+}
+
+// newIPLimiter builds the limiter RateLimit uses, with the production cap. A
+// function of its own so a test can check what RateLimit really builds.
+func newIPLimiter(cfg RateLimitConfig, log *slog.Logger) *ipLimiter {
+	return &ipLimiter{
+		limit:    rate.Every(cfg.Every),
+		burst:    cfg.Burst,
+		ttl:      cfg.TTL,
+		buckets:  make(map[string]*bucket),
+		lastKeep: time.Now(),
+		max:      maxBuckets,
+		name:     cfg.Name,
+		log:      log,
 	}
 }
 

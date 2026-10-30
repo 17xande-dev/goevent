@@ -68,12 +68,13 @@ INSERT INTO ticket_types (
 ) RETURNING *;
 
 -- name: UpdateTicketType :one
--- archived is deliberately not set here: it changes only through ArchiveTicketType,
--- so an admin's stale form cannot bring back a type another admin retired.
+-- archived is written only when the caller passes it (the form's checkbox differs
+-- from the value the form was loaded with), so an admin's stale form cannot undo
+-- another admin's archive, while a deliberate toggle still works.
 UPDATE ticket_types SET
     name = $3, description = $4, price_cents = $5, capacity = $6,
     max_per_registration = $7, sales_start_at = $8, sales_end_at = $9,
-    hidden = $10, position = $11
+    hidden = $10, position = $11, archived = COALESCE(sqlc.narg(archived), archived)
 WHERE event_id = $1 AND id = $2
 RETURNING *;
 
@@ -97,10 +98,10 @@ INSERT INTO questions (
 ) RETURNING *;
 
 -- name: UpdateQuestion :one
--- archived is deliberately not set here; see UpdateTicketType.
+-- archived is written only when passed; see UpdateTicketType.
 UPDATE questions SET
     scope = $3, kind = $4, label = $5, help = $6, options = $7, required = $8,
-    ticket_type_ids = $9, position = $10
+    ticket_type_ids = $9, position = $10, archived = COALESCE(sqlc.narg(archived), archived)
 WHERE event_id = $1 AND id = $2
 RETURNING *;
 

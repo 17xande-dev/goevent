@@ -207,12 +207,15 @@ func (s *Store) CreateTicketType(ctx context.Context, t TicketType) (TicketType,
 	return ticketType(r), nil
 }
 
-func (s *Store) UpdateTicketType(ctx context.Context, t TicketType) (TicketType, error) {
+// UpdateTicketType saves a ticket type's fields. archived is written only when
+// non-nil: nil leaves it as stored, so a form loaded before another admin archived
+// the type cannot bring it back.
+func (s *Store) UpdateTicketType(ctx context.Context, t TicketType, archived *bool) (TicketType, error) {
 	r, err := s.q.UpdateTicketType(ctx, gen.UpdateTicketTypeParams{
 		EventID: t.EventID, ID: t.ID, Name: t.Name, Description: t.Description, PriceCents: t.PriceCents,
 		Capacity: t.Capacity, MaxPerRegistration: t.MaxPerRegistration,
 		SalesStartAt: t.SalesStartAt, SalesEndAt: t.SalesEndAt, Hidden: t.Hidden,
-		Position: t.Position,
+		Position: t.Position, Archived: archived,
 	})
 	if err != nil {
 		return TicketType{}, translate(fmt.Errorf("events: update ticket type: %w", err))
@@ -266,11 +269,12 @@ func (s *Store) CreateQuestion(ctx context.Context, q Question) (Question, error
 	return question(r), nil
 }
 
-func (s *Store) UpdateQuestion(ctx context.Context, q Question) (Question, error) {
+// UpdateQuestion saves a question's fields; archived is as for UpdateTicketType.
+func (s *Store) UpdateQuestion(ctx context.Context, q Question, archived *bool) (Question, error) {
 	r, err := s.q.UpdateQuestion(ctx, gen.UpdateQuestionParams{
 		EventID: q.EventID, ID: q.ID, Scope: string(q.Scope), Kind: string(q.Kind), Label: q.Label,
 		Help: q.Help, Options: nonNil(q.Options), Required: q.Required,
-		TicketTypeIDs: limit(q), Position: q.Position,
+		TicketTypeIDs: limit(q), Position: q.Position, Archived: archived,
 	})
 	if err != nil {
 		return Question{}, translate(fmt.Errorf("events: update question: %w", err))

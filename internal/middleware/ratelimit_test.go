@@ -374,8 +374,11 @@ func TestRateLimit_FloodOfAddressesNeverGrowsTheMap(t *testing.T) {
 
 func TestRateLimit_CapSweepReclaimsExpiredBucketsOnly(t *testing.T) {
 	// The ordinary once-per-TTL sweep must not be what frees room here, or the
-	// cap-time sweep is never exercised: it ran at t=1000, and the next is not due
-	// until t=1060, but the cap-time sweep at t=1061 resets that clock.
+	// cap-time sweep is never exercised. It ran at t=1000, so the next is due at
+	// t=1060: at t=1061 it runs too, but evicts nothing (.2 and .3 were seen at
+	// 1050, .1 at 1059), so the newcomer is still refused. At t=1111 no ordinary
+	// sweep is due, because the cap-time sweep at t=1061 reset that clock to 1061,
+	// and only the cap-time sweep can reclaim room.
 	l := newTestLimiter(2, 3, 60*time.Second)
 	l.allow("10.0.0.1", time.Unix(1000, 0)) // regular sweep runs
 	l.allow("10.0.0.2", time.Unix(1050, 0))
@@ -418,5 +421,29 @@ func TestRateLimit_CapSweepIsNotRunPerRefusedRequest(t *testing.T) {
 	// Once the interval has passed the sweep runs and the cap heals.
 	if !l.allow("10.9.9.9", time.Unix(1058, 0).Add(capSweepEvery+time.Second)) {
 		t.Error("the cap did not heal once capSweepEvery had passed")
+	}
+}
+
+// The limiter RateLimit builds must carry the production cap: a zero or an
+// enormous one would turn the bound off without any other test noticing.
+func TestRateLimit_ProductionLimiterHasTheCap(t *testing.T) {
+	if maxBuckets != 10_000 {
+		t.Fatalf("maxBuckets = %d, want 10000", maxBuckets)
+	}
+	built := newIPLimiter(RateLimitConfig{Name: "t", Every: time.Hour, Burst: 1, TTL: time.Hour}, discard())
+	if built.max != maxBuckets {
+		t.Errorf("production limiter max = %d, want %d", built.max, maxBuckets)
+	}
+
+	// And the cap really bites at that size, through the zero-means-default path
+	// as well as the explicit one.
+	for _, l := range []*ipLimiter{built, newTestLimiter(1, 0, time.Hour)} {
+		now := time.Unix(1000, 0)
+		for i := range maxBuckets + 5 {
+			l.allow("10."+strconv.Itoa(i>>16)+"."+strconv.Itoa(i>>8&255)+"."+strconv.Itoa(i&255), now)
+		}
+		if got := l.size(); got != maxBuckets {
+			t.Errorf("limiter held %d buckets after %d clients, want the cap %d", got, maxBuckets+5, maxBuckets)
+		}
 	}
 }

@@ -400,3 +400,111 @@ func TestAdminEvents_DeleteADraftNobodyRegisteredFor(t *testing.T) {
 		t.Error("the deleted event's image was left in the bucket")
 	}
 }
+
+// ticketEdit is the ticket-type edit form as a browser would submit it: the
+// archived checkbox ticked or not, and archived_was the value the form was loaded with.
+func ticketEdit(name string, archived, was bool) url.Values {
+	f := ticketForm(name, "100")
+	f.Set("position", "0")
+	if archived {
+		f.Set("archived", "1")
+	}
+	if was {
+		f.Set("archived_was", "1")
+	}
+	return f
+}
+
+func TestAdminTickets_ArchivedCheckboxTogglesOnlyWhenChanged(t *testing.T) {
+	s := setupApp(t)
+	e := createEvent(t, s, "Camp")
+	addTicket(t, s, e, ticketForm("Adult", "100"))
+	tts, _ := s.events.TicketTypes(t.Context(), e.ID)
+	path := "/admin/events/" + e.ID + "/tickets/" + tts[0].ID
+	archived := func() bool {
+		tt, err := s.events.TicketType(t.Context(), e.ID, tts[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tt.Archived
+	}
+	save := func(f url.Values) {
+		t.Helper()
+		if res, body := post(t, s.srv, path, f); res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("save = %d %s", res.StatusCode, excerpt(body))
+		}
+	}
+
+	// The edit form carries what it was loaded with.
+	_, page := get(t, s.srv, path)
+	if !strings.Contains(page, `name="archived_was" value=""`) {
+		t.Errorf("the form does not carry archived_was:\n%s", excerpt(between(t, page, "archived_was", ">")))
+	}
+
+	save(ticketEdit("Adult", true, false)) // ticking Archived on a live type
+	if !archived() {
+		t.Fatal("ticking Archived did not archive the ticket type")
+	}
+	_, page = get(t, s.srv, path)
+	if !strings.Contains(page, `name="archived_was" value="1"`) || !strings.Contains(page, `name="archived" value="1" checked`) {
+		t.Errorf("an archived type's form does not show the box ticked:\n%s", excerpt(between(t, page, "archived_was", "Archived")))
+	}
+
+	save(ticketEdit("Adult (renamed)", false, false)) // stale form: loaded before the archive, box unticked
+	if !archived() {
+		t.Error("a stale form un-archived the ticket type")
+	}
+
+	save(ticketEdit("Adult", false, true)) // unticking on an archived type
+	if archived() {
+		t.Error("unticking Archived did not restore the ticket type")
+	}
+}
+
+func TestAdminQuestions_ArchivedCheckboxTogglesOnlyWhenChanged(t *testing.T) {
+	s := setupApp(t)
+	e := createEvent(t, s, "Camp")
+	form := url.Values{"label": {"Allergies"}, "scope": {"registration"}, "kind": {"text"}}
+	if res, body := post(t, s.srv, "/admin/events/"+e.ID+"/questions", form); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create = %d %s", res.StatusCode, excerpt(body))
+	}
+	qs, _ := s.events.Questions(t.Context(), e.ID)
+	path := "/admin/events/" + e.ID + "/questions/" + qs[0].ID
+	archived := func() bool {
+		qs, err := s.events.Questions(t.Context(), e.ID)
+		if err != nil || len(qs) != 1 {
+			t.Fatalf("questions = %+v, %v", qs, err)
+		}
+		return qs[0].Archived
+	}
+	save := func(archivedBox, was bool) {
+		t.Helper()
+		f := url.Values{"label": {"Allergies"}, "scope": {"registration"}, "kind": {"text"}, "position": {"0"}}
+		if archivedBox {
+			f.Set("archived", "1")
+		}
+		if was {
+			f.Set("archived_was", "1")
+		}
+		if res, body := post(t, s.srv, path, f); res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("save = %d %s", res.StatusCode, excerpt(body))
+		}
+	}
+
+	save(true, false)
+	if !archived() {
+		t.Fatal("ticking Archived did not archive the question")
+	}
+	_, page := get(t, s.srv, path)
+	if !strings.Contains(page, `name="archived_was" value="1"`) || !strings.Contains(page, `name="archived" value="1" checked`) {
+		t.Error("an archived question's form does not show the box ticked")
+	}
+	save(false, false) // stale form from before the archive
+	if !archived() {
+		t.Error("a stale form un-archived the question")
+	}
+	save(false, true)
+	if archived() {
+		t.Error("unticking Archived did not restore the question")
+	}
+}

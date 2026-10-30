@@ -209,7 +209,7 @@ func TestUpdateTicketType_StaleFormCannotUnarchive(t *testing.T) {
 	}
 
 	stale.Name = "Adult (renamed)"
-	got, err := s.UpdateTicketType(t.Context(), stale)
+	got, err := s.UpdateTicketType(t.Context(), stale, nil)
 	if err != nil {
 		t.Fatalf("UpdateTicketType: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestQuestion_EmptyLimitMeansEveryTicketType(t *testing.T) {
 
 	q.TicketTypeIDs = []string{tt.ID}
 	q.Options = nil
-	q, err = s.UpdateQuestion(t.Context(), q)
+	q, err = s.UpdateQuestion(t.Context(), q, nil)
 	if err != nil {
 		t.Fatalf("UpdateQuestion: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestQuestion_EmptyLimitMeansEveryTicketType(t *testing.T) {
 
 	// A registration question has no ticket-type limit, whatever was submitted.
 	q.Scope = events.ScopeRegistration
-	q, err = s.UpdateQuestion(t.Context(), q)
+	q, err = s.UpdateQuestion(t.Context(), q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestUpdateQuestion_StaleFormCannotUnarchive(t *testing.T) {
 	}
 
 	stale.Label = "Photo consent (2026)"
-	got, err := s.UpdateQuestion(t.Context(), stale)
+	got, err := s.UpdateQuestion(t.Context(), stale, nil)
 	if err != nil {
 		t.Fatalf("UpdateQuestion: %v", err)
 	}
