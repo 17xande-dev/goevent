@@ -96,6 +96,36 @@ back with a real decoder, because drawing the right number of squares in the wro
 would pass every other test and fail at the door. It is skipped when `zbarimg` is not on
 the `PATH`. Install the `zbar` package (`zbar-tools` on Debian and Ubuntu) to run it.
 
+### Trying a real S3 server
+
+Development stores images in a directory, which needs nothing running. To exercise the
+bucket backend without a Cloudflare account, the compose file has a
+[RustFS](https://github.com/rustfs/rustfs) service behind the `s3` profile, on host port
+19000 so it runs beside gostore's:
+
+```sh
+docker compose --profile s3 up -d --wait rustfs
+for b in goevent-images goevent-test-images; do
+  curl -s --aws-sigv4 aws:amz:auto:s3 --user rustfsadmin:rustfsadmin -X PUT http://127.0.0.1:19000/$b
+done
+```
+
+Then point the server at it with `BLOB_ENDPOINT=127.0.0.1:19000` (`rustfs:9000` from inside
+the compose network), `BLOB_USE_TLS=false`, credentials `rustfsadmin` / `rustfsadmin`, and
+a `BLOB_PUBLIC_BASE_URL` of `http://127.0.0.1:19000/goevent-images`. Make that bucket
+publicly readable before expecting event images to display.
+
+The same server backs the storage test that needs a real bucket. It skips unless
+`BLOB_TEST_ENDPOINT` is set:
+
+```sh
+BLOB_TEST_ENDPOINT=127.0.0.1:19000 go test ./internal/blob/
+```
+
+(`BLOB_TEST_BUCKET`, `BLOB_TEST_ACCESS_KEY` and `BLOB_TEST_SECRET_KEY` override the
+`goevent-test-images` bucket and the RustFS credentials.) Run it after updating the AWS SDK
+modules; the in-memory fake cannot tell you the client still agrees with a real server.
+
 ### No inline styles or event handlers in templates
 
 The Content-Security-Policy has no `'unsafe-inline'` in `style-src` or `script-src`. A
@@ -190,7 +220,7 @@ dependency.
 | [`golang.org/x/crypto`](https://pkg.go.dev/golang.org/x/crypto) | `argon2` for admin passwords; `bcrypt` so older hashes still verify |
 | [`golang.org/x/time`](https://pkg.go.dev/golang.org/x/time/rate) | The token bucket behind the rate limits |
 | [`17xande-dev/mailer`](https://github.com/17xande-dev/mailer) | Sending email behind one `Sender` interface: SMTP, XOAUTH2 for Exchange, Microsoft Graph, inline images. Shared with gostore. Pulls in [`wneessen/go-mail`](https://github.com/wneessen/go-mail) for MIME |
-| [`minio/minio-go/v7`](https://github.com/minio/minio-go) | Event images in S3-compatible storage |
+| [`aws/aws-sdk-go-v2`](https://github.com/aws/aws-sdk-go-v2) (`service/s3`, `feature/s3/manager`, `credentials`) | Event images in S3-compatible storage (R2, GCS interop, RustFS). Configured with checksums "when required", which non-AWS stores need |
 | [`rsc.io/qr`](https://pkg.go.dev/rsc.io/qr) | Encoding ticket codes as QR codes; [`internal/ticket`](../internal/ticket/qr.go) draws them as PNG and SVG |
 
 Everything else is the standard library. htmx is vendored into

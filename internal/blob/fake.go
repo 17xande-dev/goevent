@@ -32,7 +32,7 @@ func (Unconfigured) URL(string) string { return "" }
 
 // Fake keeps objects in memory. It backs the handler tests, so an upload can be
 // exercised end to end — including that the bytes stored are the bytes sent, and
-// that a replaced image's old object is actually deleted — without MinIO running.
+// that a replaced image's old object is actually deleted — without an object server running.
 type Fake struct {
 	// Err, when set, is returned by Put and Delete, standing in for a bucket that
 	// is unreachable or credentials that have been revoked.

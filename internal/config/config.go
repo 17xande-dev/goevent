@@ -265,7 +265,7 @@ type SnapScan struct {
 func (s SnapScan) Configured() bool { return s.SnapCode != "" }
 
 // Blob is object storage for event images, against anything speaking the S3
-// API — Cloudflare R2, Google Cloud Storage in interoperability mode, or MinIO.
+// API — Cloudflare R2, Google Cloud Storage in interoperability mode, or a self-hosted S3 server.
 //
 // PublicBaseURL is separate from Endpoint and cannot be derived from it: the
 // address a bucket is written through and the address it is read from are
@@ -277,7 +277,7 @@ type Blob struct {
 	AccessKey string
 	SecretKey string
 
-	// Region is "auto" for R2. GCS and MinIO ignore it.
+	// Region is "auto" for R2. GCS and RustFS ignore it.
 	Region string
 	UseTLS bool
 
@@ -292,7 +292,7 @@ func (b Blob) Configured() bool { return b.Endpoint != "" }
 //
 // This is not fussiness. A CSP source whose path does not end in "/" must match a
 // URL's path *exactly*, so listing "http://host:9000/bucket" permits that one URL
-// and refuses "http://host:9000/bucket/events/x.jpg" — every actual image. MinIO
+// and refuses "http://host:9000/bucket/events/x.jpg" — every actual image. RustFS
 // and any path-style bucket URL hit this, and the failure is invisible outside a
 // browser: the image returns 200 to curl, the markup is correct, and the page shows
 // a broken image with a console warning nothing else surfaces.

@@ -24,6 +24,22 @@ services:
       timeout: 3s
       retries: 20
 
+  # An S3-compatible server for trying the bucket backend (BLOB_*) without R2.
+  # Off by default: development uses a plain directory. Start it with
+  # `docker compose --profile s3 up -d rustfs`; docs/development.md has the rest.
+  # Host port 19000, so it runs beside gostore's RustFS on 9000.
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    profiles: ["s3"]
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_VOLUMES: /data
+    ports:
+      - "127.0.0.1:19000:9000"
+    volumes:
+      - rustfs-data:/data
+
   mailpit:
     image: axllent/mailpit:latest
     ports:
@@ -84,3 +100,4 @@ services:
 
 volumes:
   pgdata:
+  rustfs-data:

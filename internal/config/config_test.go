@@ -374,7 +374,7 @@ func TestLoad_Blob(t *testing.T) {
 	if !c.Blob.Configured() {
 		t.Fatal("a full BLOB_* set was not recognised")
 	}
-	// "auto" is what R2 wants, and GCS and MinIO ignore it.
+	// "auto" is what R2 wants, and GCS and RustFS ignore it.
 	if c.Blob.Region != "auto" {
 		t.Errorf("Region = %q, want auto", c.Blob.Region)
 	}

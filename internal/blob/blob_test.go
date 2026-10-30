@@ -154,7 +154,7 @@ func TestNewS3_ValidatesConfiguration(t *testing.T) {
 	}
 
 	// The scheme-in-endpoint message has to say what to do instead, because
-	// minio-go's own error for it is opaque.
+	// the SDK's own error for it is opaque.
 	cfg := valid
 	cfg.Endpoint = "https://localhost:9000"
 	if _, err := NewS3(cfg); err == nil || !strings.Contains(err.Error(), "BLOB_USE_TLS") {

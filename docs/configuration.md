@@ -100,12 +100,12 @@ it up with the database. See [Security](security.md#manage-links-and-ticket-code
 | `EMAIL_REPLY_TO` | no | — | When replies should not go to `EMAIL_FROM` |
 | **Event images** | | | One backend required; see the note below |
 | `IMAGE_DIR` | one backend | — | Store images in this directory, served by this server at `/images/` |
-| `BLOB_ENDPOINT` | one backend | — | S3-compatible host[:port], no scheme (R2, GCS interoperability, MinIO) |
+| `BLOB_ENDPOINT` | one backend | — | S3-compatible host[:port], no scheme (R2, GCS interoperability, RustFS or another S3-compatible server) |
 | `BLOB_BUCKET` | with `BLOB_ENDPOINT` | — | Bucket name |
 | `BLOB_ACCESS_KEY_ID` / `BLOB_SECRET_ACCESS_KEY` | with `BLOB_ENDPOINT` | — | Credentials |
 | `BLOB_PUBLIC_BASE_URL` | with `BLOB_ENDPOINT` | — | Where browsers **read** images from; the bucket must be publicly readable there. Absolute URL |
-| `BLOB_REGION` | no | `auto` | What R2 wants; GCS and MinIO ignore it |
-| `BLOB_USE_TLS` | no | `true` | `false` only for a MinIO on the same machine (logged as a warning) |
+| `BLOB_REGION` | no | `auto` | What R2 wants; GCS and RustFS ignore it |
+| `BLOB_USE_TLS` | no | `true` | `false` only for an object server such as RustFS on the same machine (logged as a warning) |
 | **Theming** | | | See [Theming](theming.md) |
 | `TEMPLATE_DIR` | no | — | Directory of templates that override the embedded ones by path. Must exist |
 | `STATIC_DIR` | no | — | Directory of assets that override the bundled ones by name. Must exist |
