@@ -194,6 +194,37 @@ func TestRemoveTicketType_DeletesUnusedAndArchivesHeld(t *testing.T) {
 	}
 }
 
+// An admin's form was loaded before another admin removed (and so archived) the
+// ticket type. Saving that stale form must not bring it back.
+func TestUpdateTicketType_StaleFormCannotUnarchive(t *testing.T) {
+	s, pool, e := setup(t)
+	held, err := s.CreateTicketType(t.Context(), events.TicketType{EventID: e.ID, Name: "Adult", PriceCents: 15000, MaxPerRegistration: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold(t, pool, e, held, nil)
+	stale := held // loaded with Archived == false
+	if archived, err := s.RemoveTicketType(t.Context(), e.ID, held.ID); err != nil || !archived {
+		t.Fatalf("archived=%v err=%v, want an archive", archived, err)
+	}
+
+	stale.Name = "Adult (renamed)"
+	got, err := s.UpdateTicketType(t.Context(), stale)
+	if err != nil {
+		t.Fatalf("UpdateTicketType: %v", err)
+	}
+	if !got.Archived {
+		t.Error("a stale form un-archived the ticket type")
+	}
+	if got.Name != "Adult (renamed)" {
+		t.Errorf("the rest of the form was not saved: name %q", got.Name)
+	}
+	again, err := s.TicketType(t.Context(), e.ID, held.ID)
+	if err != nil || !again.Archived {
+		t.Errorf("stored ticket type after the update: %+v, %v", again, err)
+	}
+}
+
 func TestRemoveTicketType_IsScopedToItsEvent(t *testing.T) {
 	s, _, e := setup(t)
 	other, err := s.Create(t.Context(), newEvent("other"))
@@ -276,6 +307,37 @@ func TestRemoveQuestion_ArchivesAnAnsweredQuestion(t *testing.T) {
 	qs, err := s.Questions(t.Context(), e.ID)
 	if err != nil || len(qs) != 1 || !qs[0].Archived {
 		t.Errorf("questions after removal: %+v, %v", qs, err)
+	}
+}
+
+func TestUpdateQuestion_StaleFormCannotUnarchive(t *testing.T) {
+	s, pool, e := setup(t)
+	tt, err := s.CreateTicketType(t.Context(), events.TicketType{EventID: e.ID, Name: "Adult", MaxPerRegistration: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := s.CreateQuestion(t.Context(), events.Question{
+		EventID: e.ID, Scope: events.ScopeAttendee, Kind: events.KindCheckbox, Label: "Photo consent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold(t, pool, e, tt, &q)
+	stale := q
+	if archived, err := s.RemoveQuestion(t.Context(), e.ID, q.ID); err != nil || !archived {
+		t.Fatalf("archived=%v err=%v, want an archive", archived, err)
+	}
+
+	stale.Label = "Photo consent (2026)"
+	got, err := s.UpdateQuestion(t.Context(), stale)
+	if err != nil {
+		t.Fatalf("UpdateQuestion: %v", err)
+	}
+	if !got.Archived {
+		t.Error("a stale form un-archived the question")
+	}
+	if got.Label != "Photo consent (2026)" {
+		t.Errorf("the rest of the form was not saved: label %q", got.Label)
 	}
 }
 

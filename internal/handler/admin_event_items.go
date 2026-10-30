@@ -266,7 +266,6 @@ func ticketValues(e events.Event, t events.TicketType) formValues {
 		"sales_start_at":       formatLocal(t.SalesStartAt, loc),
 		"sales_end_at":         formatLocal(t.SalesEndAt, loc),
 		"hidden":               checkbox(t.Hidden),
-		"archived":             checkbox(t.Archived),
 		"position":             strconv.Itoa(t.Position),
 	}
 }
@@ -280,7 +279,7 @@ func parseTicket(r *http.Request, e events.Event) (events.TicketType, formValues
 
 	t := events.TicketType{
 		EventID: e.ID, Name: f["name"], Description: strings.TrimSpace(r.PostFormValue("description")),
-		Hidden: f.On("hidden"), Archived: f.On("archived"),
+		Hidden: f.On("hidden"),
 	}
 	if f["price"] == "" {
 		errs.Add("price", "Required. Use 0 for a free ticket.")
@@ -316,7 +315,7 @@ func questionValues(q events.Question) formValues {
 	return formValues{
 		"scope": string(q.Scope), "kind": string(q.Kind), "label": q.Label, "help": q.Help,
 		"options":  strings.Join(q.Options, "\n"),
-		"required": checkbox(q.Required), "archived": checkbox(q.Archived),
+		"required": checkbox(q.Required),
 		"position": strconv.Itoa(q.Position),
 	}
 }
@@ -331,7 +330,7 @@ func parseQuestion(r *http.Request, e events.Event, tts []events.TicketType) (ev
 
 	q := events.Question{
 		EventID: e.ID, Scope: events.Scope(f["scope"]), Kind: events.Kind(f["kind"]),
-		Label: f["label"], Help: f["help"], Required: f.On("required"), Archived: f.On("archived"),
+		Label: f["label"], Help: f["help"], Required: f.On("required"),
 	}
 	for line := range strings.SplitSeq(f["options"], "\n") {
 		if line = strings.TrimSpace(line); line != "" && !slices.Contains(q.Options, line) {

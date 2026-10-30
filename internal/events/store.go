@@ -212,7 +212,7 @@ func (s *Store) UpdateTicketType(ctx context.Context, t TicketType) (TicketType,
 		EventID: t.EventID, ID: t.ID, Name: t.Name, Description: t.Description, PriceCents: t.PriceCents,
 		Capacity: t.Capacity, MaxPerRegistration: t.MaxPerRegistration,
 		SalesStartAt: t.SalesStartAt, SalesEndAt: t.SalesEndAt, Hidden: t.Hidden,
-		Position: t.Position, Archived: t.Archived,
+		Position: t.Position,
 	})
 	if err != nil {
 		return TicketType{}, translate(fmt.Errorf("events: update ticket type: %w", err))
@@ -270,7 +270,7 @@ func (s *Store) UpdateQuestion(ctx context.Context, q Question) (Question, error
 	r, err := s.q.UpdateQuestion(ctx, gen.UpdateQuestionParams{
 		EventID: q.EventID, ID: q.ID, Scope: string(q.Scope), Kind: string(q.Kind), Label: q.Label,
 		Help: q.Help, Options: nonNil(q.Options), Required: q.Required,
-		TicketTypeIDs: limit(q), Position: q.Position, Archived: q.Archived,
+		TicketTypeIDs: limit(q), Position: q.Position,
 	})
 	if err != nil {
 		return Question{}, translate(fmt.Errorf("events: update question: %w", err))

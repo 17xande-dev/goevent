@@ -68,10 +68,12 @@ INSERT INTO ticket_types (
 ) RETURNING *;
 
 -- name: UpdateTicketType :one
+-- archived is deliberately not set here: it changes only through ArchiveTicketType,
+-- so an admin's stale form cannot bring back a type another admin retired.
 UPDATE ticket_types SET
     name = $3, description = $4, price_cents = $5, capacity = $6,
     max_per_registration = $7, sales_start_at = $8, sales_end_at = $9,
-    hidden = $10, position = $11, archived = $12
+    hidden = $10, position = $11
 WHERE event_id = $1 AND id = $2
 RETURNING *;
 
@@ -95,9 +97,10 @@ INSERT INTO questions (
 ) RETURNING *;
 
 -- name: UpdateQuestion :one
+-- archived is deliberately not set here; see UpdateTicketType.
 UPDATE questions SET
     scope = $3, kind = $4, label = $5, help = $6, options = $7, required = $8,
-    ticket_type_ids = $9, position = $10, archived = $11
+    ticket_type_ids = $9, position = $10
 WHERE event_id = $1 AND id = $2
 RETURNING *;
 

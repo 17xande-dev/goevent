@@ -722,7 +722,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 const updateQuestion = `-- name: UpdateQuestion :one
 UPDATE questions SET
     scope = $3, kind = $4, label = $5, help = $6, options = $7, required = $8,
-    ticket_type_ids = $9, position = $10, archived = $11
+    ticket_type_ids = $9, position = $10
 WHERE event_id = $1 AND id = $2
 RETURNING id, event_id, scope, kind, label, help, options, required, ticket_type_ids, position, archived, created_at
 `
@@ -738,9 +738,9 @@ type UpdateQuestionParams struct {
 	Required      bool
 	TicketTypeIDs []string
 	Position      int
-	Archived      bool
 }
 
+// archived is deliberately not set here; see UpdateTicketType.
 func (q *Queries) UpdateQuestion(ctx context.Context, arg UpdateQuestionParams) (Question, error) {
 	row := q.db.QueryRow(ctx, updateQuestion,
 		arg.EventID,
@@ -753,7 +753,6 @@ func (q *Queries) UpdateQuestion(ctx context.Context, arg UpdateQuestionParams) 
 		arg.Required,
 		arg.TicketTypeIDs,
 		arg.Position,
-		arg.Archived,
 	)
 	var i Question
 	err := row.Scan(
@@ -777,7 +776,7 @@ const updateTicketType = `-- name: UpdateTicketType :one
 UPDATE ticket_types SET
     name = $3, description = $4, price_cents = $5, capacity = $6,
     max_per_registration = $7, sales_start_at = $8, sales_end_at = $9,
-    hidden = $10, position = $11, archived = $12
+    hidden = $10, position = $11
 WHERE event_id = $1 AND id = $2
 RETURNING id, event_id, name, description, price_cents, capacity, max_per_registration, sales_start_at, sales_end_at, hidden, archived, position, created_at
 `
@@ -794,9 +793,10 @@ type UpdateTicketTypeParams struct {
 	SalesEndAt         *time.Time
 	Hidden             bool
 	Position           int
-	Archived           bool
 }
 
+// archived is deliberately not set here: it changes only through ArchiveTicketType,
+// so an admin's stale form cannot bring back a type another admin retired.
 func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypeParams) (TicketType, error) {
 	row := q.db.QueryRow(ctx, updateTicketType,
 		arg.EventID,
@@ -810,7 +810,6 @@ func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypePara
 		arg.SalesEndAt,
 		arg.Hidden,
 		arg.Position,
-		arg.Archived,
 	)
 	var i TicketType
 	err := row.Scan(
