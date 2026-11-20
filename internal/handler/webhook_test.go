@@ -93,3 +93,49 @@ func TestPayFastCallback_UsesBareClientIPFromTrustedHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestPaymentCallback_OversizedBodyDoesNotSettle(t *testing.T) {
+	s := newApp(t)
+	e, adult, _ := published(t, s, 10)
+	submit(t, s, e, registerForm(t, s, e, map[string]int{adult.ID: 1}))
+	id := s.gateway.Requests()[0].Reference
+	valid := string(payment.FakeCallbackBody(id, "gateway-txn", "COMPLETE", 45000))
+	postBody := func(body string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+			s.srv.URL+"/payments/fake/callback", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("callback = %d, want 200", res.StatusCode)
+		}
+	}
+
+	// The fake has no body-size check of its own. Bury the valid notification
+	// beyond the read cap so only an unbounded handler can settle the payment.
+	postBody("padding=" + strings.Repeat("x", maxCallbackBytes) + "&" + valid)
+	p, err := s.regs.Payment(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := onlyRegistration(t, s).Status; p.Status != "pending" || got != registrations.StatusPending {
+		t.Fatalf("oversized callback changed payment to %q and registration to %q", p.Status, got)
+	}
+
+	// The very same notification without padding must settle the payment.
+	postBody(valid)
+	p, err = s.regs.Payment(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Status != "paid" || p.GatewayRef != "gateway-txn" {
+		t.Fatalf("un-padded callback did not settle the payment: %+v", p)
+	}
+}
