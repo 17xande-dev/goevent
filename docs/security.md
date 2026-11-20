@@ -119,9 +119,11 @@ and amount and guards against replays. See [Payments](payments.md#the-callback).
 
 ## Rate limits
 
-Per client IP, a token bucket from
-[`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate), applied on the line
-that registers each route rather than around a prefix:
+Per client IP, using the shared
+[`17xande-dev/ratelimit`](https://github.com/17xande-dev/ratelimit) module (bounded keyed
+token buckets over [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate),
+IPv6 grouped by /64, a full table refusing newcomers) and its `clientip` package for the
+address itself, applied on the line that registers each route rather than around a prefix:
 
 | Route | Default | Why |
 |---|---|---|
