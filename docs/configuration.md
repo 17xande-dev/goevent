@@ -84,7 +84,7 @@ it up with the database. See [Security](security.md#manage-links-and-ticket-code
 | `PAYFAST_PASSPHRASE` | no | — | The account's salt passphrase; must match the dashboard exactly |
 | `PAYFAST_SANDBOX` | no | `true` | `false` takes real money. Refused with PayFast's published sandbox merchant id (`10000100`). See [Going live](payments.md#going-live) |
 | `PAYFAST_NOTIFY_URL` | no | `BASE_URL` + `/payments/payfast/callback` | Override when PayFast cannot reach `BASE_URL`, such as a tunnel during development. Must be an absolute URL |
-| `PAYFAST_ALLOWED_CIDRS` | no | PayFast's published ranges | Comma-separated CIDRs a notification may come from. `any` disables the check (sandbox testing only) |
+| `PAYFAST_ALLOWED_CIDRS` | no | PayFast's default static ranges | Comma-separated CIDRs that replace the static ranges. Addresses resolved from PayFast's notification hostnames are still accepted. `any` disables both source-IP checks (sandbox testing only) |
 | `SNAPSCAN_SNAP_CODE` | no | — | Its presence switches SnapScan on. **No sandbox: this takes real money** |
 | `SNAPSCAN_API_KEY` | with SnapScan | — | Reads payments back from SnapScan's API to confirm a notification |
 | `SNAPSCAN_WEBHOOK_AUTH_KEY` | with SnapScan | — | The shared secret a notification's HMAC is computed with |

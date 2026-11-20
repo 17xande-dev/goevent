@@ -205,17 +205,21 @@ Switching it off is two changes: your own merchant id, key and passphrase, and
 PayFast's published sandbox merchant id (`10000100`).
 
 Behind any proxy, **`CLIENT_IP_SOURCE` must describe it**, or the source-IP check compares
-PayFast's ranges against the proxy's address and rejects every genuine notification: money
+PayFast's source addresses against the proxy's address and rejects every genuine notification: money
 taken, nothing recorded. The deployments set it for you: `forwarded` behind Caddy,
 `cloudflare` behind the tunnel. Use `remote` only when nothing sits in front.
 
 ### How a PayFast notification is authenticated
 
 The **ITN**, PayFast's form-encoded POST to the notify URL, passes four checks, in this
-order, before anything happens ([`payfast/itn.go`](https://github.com/17xande-dev/payment/blob/v0.1.0/payfast/itn.go)):
+order, before anything happens ([`payfast/itn.go`](https://github.com/17xande-dev/payment/blob/v0.2.2/payfast/itn.go)):
 
 1. **The signature recomputes** over the fields exactly as received, in the order received.
-2. **The source IP** is in PayFast's published ranges, or `PAYFAST_ALLOWED_CIDRS`.
+2. **The source IP** matches a static range or an address resolved from PayFast's
+   notification hostnames for the selected mode. Setting `PAYFAST_ALLOWED_CIDRS`
+   replaces only the static ranges. Using static ranges alone requires passing an
+   explicitly empty `payfast.Config.SourceHosts` in Go; there is no environment
+   variable for that.
 3. **PayFast confirms it** when the exact bytes received are posted back to its validate
    endpoint.
 4. **The merchant id** is ours.
