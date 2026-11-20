@@ -11,8 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/time/rate"
+	"github.com/17xande-dev/ratelimit/clientip"
 )
+
+// forwarded is what CLIENT_IP_SOURCE=forwarded parses to.
+var forwarded = mustSource("forwarded")
+
+func mustSource(v string) clientip.Source {
+	s, err := clientip.ParseSource(v)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
 
 func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
@@ -20,7 +31,7 @@ func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // through. The counter is atomic because the concurrency test drives it from twenty
 // goroutines at once — the limiter is safe for that, and the test's own bookkeeping
 // has to be too.
-func limited(cfg RateLimitConfig, source ClientIPSource) (http.Handler, *atomic.Int64) {
+func limited(cfg RateLimitConfig, source clientip.Source) (http.Handler, *atomic.Int64) {
 	var served atomic.Int64
 	h := RateLimit(cfg, source, discard())(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		served.Add(1)
@@ -36,7 +47,7 @@ func requestFrom(ip string) *http.Request {
 
 func TestRateLimit_AllowsTheBurstThenRefuses(t *testing.T) {
 	// One request a second, five saved up.
-	h, served := limited(RateLimitConfig{Name: "test", Every: time.Second, Burst: 5}, ClientIPRemote)
+	h, served := limited(RateLimitConfig{Name: "test", Every: time.Second, Burst: 5}, clientip.Source{})
 
 	codes := make([]int, 0, 8)
 	for range 8 {
@@ -62,7 +73,7 @@ func TestRateLimit_AllowsTheBurstThenRefuses(t *testing.T) {
 func TestRateLimit_TellsTheClientWhenToReturn(t *testing.T) {
 	// Retry-After matters more than usual here: the payment gateway reads it, and a
 	// throttled notification that is never retried is a lost payment.
-	h, _ := limited(RateLimitConfig{Name: "test", Every: 2 * time.Second, Burst: 1}, ClientIPRemote)
+	h, _ := limited(RateLimitConfig{Name: "test", Every: 2 * time.Second, Burst: 1}, clientip.Source{})
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, requestFrom("203.0.113.7"))
@@ -83,7 +94,7 @@ func TestRateLimit_TellsTheClientWhenToReturn(t *testing.T) {
 
 func TestRateLimit_IsPerClient(t *testing.T) {
 	// One registrant hitting a limit must not stop everybody else registering.
-	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, ClientIPRemote)
+	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, clientip.Source{})
 
 	for _, ip := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {
 		w := httptest.NewRecorder()
@@ -107,7 +118,7 @@ func TestRateLimit_IsPerClient(t *testing.T) {
 func TestRateLimit_RecoversOverTime(t *testing.T) {
 	// The bucket refills, so a client that waits is served again — otherwise a
 	// limiter is a ban.
-	h, _ := limited(RateLimitConfig{Name: "test", Every: 20 * time.Millisecond, Burst: 1}, ClientIPRemote)
+	h, _ := limited(RateLimitConfig{Name: "test", Every: 20 * time.Millisecond, Burst: 1}, clientip.Source{})
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, requestFrom("203.0.113.7"))
@@ -132,7 +143,7 @@ func TestRateLimit_RecoversOverTime(t *testing.T) {
 func TestRateLimit_KeyedByForwardedIPOnlyWhenTrusted(t *testing.T) {
 	// With remote, a client cannot escape its bucket by claiming an address:
 	// every request below shares one limiter because RemoteAddr is the same.
-	h, _ := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, ClientIPRemote)
+	h, _ := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, clientip.Source{})
 
 	first := requestFrom("203.0.113.7")
 	first.Header.Set("X-Forwarded-For", "198.51.100.1")
@@ -153,7 +164,7 @@ func TestRateLimit_KeyedByForwardedIPOnlyWhenTrusted(t *testing.T) {
 	// With forwarded, the header is the key — which is correct behind a proxy that
 	// replaces the header, and a limiter that limits nothing behind one that does
 	// not. That trade is documented on ClientIP.
-	h, _ = limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, ClientIPForwarded)
+	h, _ = limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, forwarded)
 	for _, claimed := range []string{"198.51.100.1", "198.51.100.2"} {
 		r := requestFrom("203.0.113.7")
 		r.Header.Set("X-Forwarded-For", claimed)
@@ -165,48 +176,10 @@ func TestRateLimit_KeyedByForwardedIPOnlyWhenTrusted(t *testing.T) {
 	}
 }
 
-func TestRateLimit_EvictsIdleBuckets(t *testing.T) {
-	// The map must not grow forever: one bucket per address ever seen would be a
-	// memory leak an attacker controls the size of.
-	l := &ipLimiter{
-		limit:    rate.Every(time.Hour),
-		burst:    1,
-		ttl:      50 * time.Millisecond,
-		buckets:  map[string]*bucket{},
-		lastKeep: time.Now(),
-	}
-
-	now := time.Now()
-	for i := range 100 {
-		l.allow("203.0.113."+strconv.Itoa(i), now)
-	}
-	if got := l.size(); got != 100 {
-		t.Fatalf("%d buckets, want 100", got)
-	}
-
-	// A request after the TTL sweeps everything idle, leaving only the new arrival.
-	l.allow("198.51.100.1", now.Add(time.Second))
-	if got := l.size(); got != 1 {
-		t.Errorf("%d buckets after eviction, want 1", got)
-	}
-
-	// A full bucket is indistinguishable from no bucket, so a client whose bucket
-	// was forgotten is not thereby given extra allowance beyond its burst.
-	w := 0
-	for range 3 {
-		if l.allow("198.51.100.1", now.Add(time.Second)) {
-			w++
-		}
-	}
-	if w != 0 {
-		t.Errorf("%d extra requests allowed straight after eviction", w)
-	}
-}
-
 func TestRateLimit_ConcurrentClients(t *testing.T) {
 	// The map is shared, so this is worth racing rather than assuming. Run with
 	// -race, which CI does.
-	h, _ := limited(RateLimitConfig{Name: "test", Every: time.Millisecond, Burst: 50}, ClientIPRemote)
+	h, _ := limited(RateLimitConfig{Name: "test", Every: time.Millisecond, Burst: 50}, clientip.Source{})
 
 	var wg sync.WaitGroup
 	for i := range 20 {
@@ -225,7 +198,7 @@ func TestRateLimit_ConcurrentClients(t *testing.T) {
 func TestRateLimit_ZeroBurstStillAllowsSomething(t *testing.T) {
 	// A misconfigured burst of zero would otherwise refuse every request forever,
 	// turning a limit into an outage.
-	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 0}, ClientIPRemote)
+	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 0}, clientip.Source{})
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, requestFrom("203.0.113.7"))
@@ -234,216 +207,106 @@ func TestRateLimit_ZeroBurstStillAllowsSomething(t *testing.T) {
 	}
 }
 
-// newTestLimiter builds a limiter with a tiny allowance so one request per client
-// is all it ever gets in the test's frozen time.
-func newTestLimiter(burst, maxB int, ttl time.Duration) *ipLimiter {
-	return &ipLimiter{
-		limit:    rate.Every(time.Hour),
-		burst:    burst,
-		ttl:      ttl,
-		buckets:  map[string]*bucket{},
-		lastKeep: time.Unix(0, 0),
-		max:      maxB,
+func TestRateLimit_CloudflareHeaderIgnoredWhenRemote(t *testing.T) {
+	// An untrusted source must not let CF-Connecting-IP pick the bucket; the
+	// cloudflare source must.
+	for _, tc := range []struct {
+		name   string
+		source clientip.Source
+		second int
+	}{
+		{"remote", clientip.Source{}, http.StatusTooManyRequests},
+		{"cloudflare", mustSource("cloudflare"), http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 1}, tc.source)
+			for i, want := range []int{http.StatusOK, tc.second} {
+				r := requestFrom("203.0.113.7")
+				r.Header.Set("CF-Connecting-IP", "198.51.100."+strconv.Itoa(i+1))
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if w.Code != want {
+					t.Errorf("request %d = %d, want %d", i, w.Code, want)
+				}
+			}
+		})
 	}
 }
 
-func TestRateLimit_IPv6KeyedBySlash64(t *testing.T) {
-	// Anyone with an IPv6 prefix owns 2^64 addresses; keyed on the full address
-	// each would get a fresh bucket and the limiter would limit nothing.
-	l := newTestLimiter(3, 0, time.Hour)
-	now := time.Unix(1000, 0)
-	allowed := 0
-	for i := range 1000 {
-		if l.allow("2001:db8:1:2::"+strconv.FormatInt(int64(i+1), 16), now) {
-			allowed++
-		}
+func TestRateLimit_IPv6SharesItsSlash64(t *testing.T) {
+	h, served := limited(RateLimitConfig{Name: "test", Every: time.Hour, Burst: 3}, clientip.Source{})
+	for i := range 20 {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r.RemoteAddr = "[2001:db8:1:2::" + strconv.FormatInt(int64(i+1), 16) + "]:4000"
+		h.ServeHTTP(httptest.NewRecorder(), r)
 	}
-	if allowed != 3 {
-		t.Errorf("%d of 1000 addresses in one /64 allowed, want the burst of 3", allowed)
-	}
-	if got := l.size(); got != 1 {
-		t.Errorf("%d buckets for one /64, want 1", got)
-	}
-
-	if !l.allow("2001:db8:1:3::1", now) {
-		t.Error("a different /64 shared the first one's bucket")
-	}
-	if got := l.size(); got != 2 {
-		t.Errorf("%d buckets for two /64s, want 2", got)
+	if got := served.Load(); got != 3 {
+		t.Errorf("%d requests from one /64 served, want the burst of 3", got)
 	}
 }
 
-func TestRateLimit_MappedIPv4SharesItsBucket(t *testing.T) {
-	l := newTestLimiter(1, 0, time.Hour)
-	now := time.Unix(1000, 0)
-	if !l.allow("1.2.3.4", now) {
-		t.Fatal("first request refused")
-	}
-	if l.allow("::ffff:1.2.3.4", now) {
-		t.Error("::ffff:1.2.3.4 got its own bucket instead of sharing 1.2.3.4's")
-	}
-	if got := l.size(); got != 1 {
-		t.Errorf("%d buckets, want 1", got)
-	}
-	// Garbage still keys as itself, and does not collide with real clients.
-	if !l.allow("not-an-ip", now) || l.size() != 2 {
-		t.Error("an unparseable address was not keyed by its raw string")
-	}
-}
-
-func TestRateLimit_CapRefusesNewClientsAndFailsClosed(t *testing.T) {
+func TestRateLimit_CustomExceededKeepsRetryAfterAndLogs(t *testing.T) {
 	var logged strings.Builder
-	l := newTestLimiter(1, 5, time.Hour)
-	l.name = "test"
-	l.log = slog.New(slog.NewTextHandler(&logged, nil))
-	now := time.Unix(1000, 0)
-
-	for i := range 5 {
-		if !l.allow("203.0.113."+strconv.Itoa(i), now) {
-			t.Fatalf("client %d refused before the cap", i)
-		}
-	}
-	// A new key at the cap is refused, repeatedly, without the map growing.
-	for range 3 {
-		if l.allow("198.51.100.1", now) {
-			t.Fatal("a new client was admitted at the cap")
-		}
-	}
-	if got := l.size(); got != 5 {
-		t.Errorf("%d buckets, want it held at the cap of 5", got)
-	}
-	// An existing client with allowance left is not locked out by the cap.
-	l2 := newTestLimiter(2, 5, time.Hour)
-	for i := range 5 {
-		l2.allow("203.0.113."+strconv.Itoa(i), now)
-	}
-	if !l2.allow("203.0.113.0", now) {
-		t.Error("an existing client was refused at the cap")
-	}
-	if l2.allow("198.51.100.1", now) {
-		t.Error("a new client was admitted at the cap")
-	}
-
-	// One log line per sweep window, not one per refused request.
-	if n := strings.Count(logged.String(), "rate limiter full"); n != 1 {
-		t.Errorf("cap logged %d times for 3 refusals, want 1", n)
-	}
-
-	// Once the buckets have expired the sweep makes room and new keys are admitted.
-	later := now.Add(2 * time.Hour)
-	if !l.allow("198.51.100.1", later) {
-		t.Error("a new client was still refused after every bucket expired")
-	}
-	if got := l.size(); got != 1 {
-		t.Errorf("%d buckets after expiry, want 1", got)
-	}
-}
-
-func TestRateLimit_FloodOfAddressesNeverGrowsTheMap(t *testing.T) {
-	// Through the middleware: a flood of distinct IPv4 addresses and distinct
-	// /64s cannot make the limiter hold more than its cap, and once full a
-	// newcomer is answered 429 rather than let through.
-	var served atomic.Int64
-	l := newTestLimiter(1, 50, time.Hour)
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.allow(ClientIP(r, ClientIPRemote), time.Unix(1000, 0)) {
-			http.Error(w, "limited", http.StatusTooManyRequests)
-			return
-		}
-		served.Add(1)
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	page := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte("the page"))
 	})
-	for i := range 500 {
-		var addr string
-		if i%2 == 0 {
-			addr = "10.1." + strconv.Itoa(i/256) + "." + strconv.Itoa(i%256)
-		} else {
-			addr = "[2001:db8:" + strconv.FormatInt(int64(i), 16) + "::1]"
+	h := RateLimit(RateLimitConfig{Name: "surface", Every: 7500 * time.Millisecond, Burst: 1, Exceeded: page},
+		clientip.Source{}, log)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	h.ServeHTTP(httptest.NewRecorder(), requestFrom("203.0.113.7"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, requestFrom("203.0.113.7"))
+
+	if w.Code != http.StatusTooManyRequests || w.Body.String() != "the page" {
+		t.Errorf("refusal = %d %q, want the custom 429 page", w.Code, w.Body.String())
+	}
+	// Truncated, as before: 7.5s advertises 7.
+	if got := w.Header().Get("Retry-After"); got != "7" {
+		t.Errorf("Retry-After = %q, want 7", got)
+	}
+	for _, want := range []string{"rate limited", "limiter=surface", "client_ip=203.0.113.7"} {
+		if !strings.Contains(logged.String(), want) {
+			t.Errorf("log %q lacks %q", logged.String(), want)
 		}
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.RemoteAddr = addr + ":4000"
+	}
+
+	// With no Exceeded: the plain-text default.
+	h, _ = limited(RateLimitConfig{Name: "t", Every: time.Hour, Burst: 1}, clientip.Source{})
+	h.ServeHTTP(httptest.NewRecorder(), requestFrom("203.0.113.7"))
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, requestFrom("203.0.113.7"))
+	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "slow down") {
+		t.Errorf("default refusal = %d %q", w.Code, w.Body.String())
+	}
+}
+
+func TestRateLimit_FullTableRefusesNewClientsAndLogsOnce(t *testing.T) {
+	var logged strings.Builder
+	log := slog.New(slog.NewTextHandler(&logged, nil))
+	var served atomic.Int64
+	h := RateLimit(RateLimitConfig{Name: "flood", Every: time.Hour, Burst: 1}, clientip.Source{}, log)(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { served.Add(1) }))
+
+	const capacity = 10_000 // the module's default MaxKeys
+	for i := range capacity {
+		h.ServeHTTP(httptest.NewRecorder(), requestFrom("10."+strconv.Itoa(i>>16)+"."+strconv.Itoa(i>>8&255)+"."+strconv.Itoa(i&255)))
+	}
+	if got := served.Load(); got != capacity {
+		t.Fatalf("%d of %d clients served before the cap", got, capacity)
+	}
+	for range 3 {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-	}
-	if got := l.size(); got != 50 {
-		t.Errorf("%d buckets after a flood, want the cap of 50", got)
-	}
-	if got := served.Load(); got != 50 {
-		t.Errorf("%d flood requests served, want 50", got)
-	}
-}
-
-func TestRateLimit_CapSweepReclaimsExpiredBucketsOnly(t *testing.T) {
-	// The ordinary once-per-TTL sweep must not be what frees room here, or the
-	// cap-time sweep is never exercised. It ran at t=1000, so the next is due at
-	// t=1060: at t=1061 it runs too, but evicts nothing (.2 and .3 were seen at
-	// 1050, .1 at 1059), so the newcomer is still refused. At t=1111 no ordinary
-	// sweep is due, because the cap-time sweep at t=1061 reset that clock to 1061,
-	// and only the cap-time sweep can reclaim room.
-	l := newTestLimiter(2, 3, 60*time.Second)
-	l.allow("10.0.0.1", time.Unix(1000, 0)) // regular sweep runs
-	l.allow("10.0.0.2", time.Unix(1050, 0))
-	l.allow("10.0.0.3", time.Unix(1050, 0))
-	l.allow("10.0.0.1", time.Unix(1059, 0))
-
-	if l.allow("10.9.9.9", time.Unix(1061, 0)) {
-		t.Fatal("a newcomer was admitted while every bucket was live")
-	}
-	// .2 and .3 are now 61s idle, .1 only 52s, and no regular sweep is due.
-	if !l.allow("10.9.9.9", time.Unix(1111, 0)) {
-		t.Fatal("the cap-time sweep did not reclaim the expired buckets")
-	}
-	if got := l.size(); got != 2 {
-		t.Errorf("%d buckets, want 2 (the live one kept, plus the newcomer)", got)
-	}
-	if _, ok := l.buckets["10.0.0.1"]; !ok {
-		t.Error("a live bucket was dropped by the cap-time sweep")
-	}
-}
-
-func TestRateLimit_CapSweepIsNotRunPerRefusedRequest(t *testing.T) {
-	// Each sweep scans the whole map under the lock, so a flood of newcomers must
-	// not trigger one apiece.
-	l := newTestLimiter(1, 2, 60*time.Second)
-	l.allow("10.0.0.1", time.Unix(1000, 0))
-	l.allow("10.0.0.2", time.Unix(1000, 0))
-
-	if l.allow("10.9.9.9", time.Unix(1058, 0)) { // cap-time sweep: nothing expired yet
-		t.Fatal("admitted while full")
-	}
-	// Both buckets expired at 1060, but the last cap-time sweep was 3s ago, so
-	// the newcomer is refused without a scan and nothing is reclaimed.
-	if l.allow("10.9.9.9", time.Unix(1061, 0)) {
-		t.Error("a refused newcomer triggered a second sweep inside capSweepEvery")
-	}
-	if got := l.size(); got != 2 {
-		t.Errorf("%d buckets, want 2 (no rescan yet)", got)
-	}
-	// Once the interval has passed the sweep runs and the cap heals.
-	if !l.allow("10.9.9.9", time.Unix(1058, 0).Add(capSweepEvery+time.Second)) {
-		t.Error("the cap did not heal once capSweepEvery had passed")
-	}
-}
-
-// The limiter RateLimit builds must carry the production cap: a zero or an
-// enormous one would turn the bound off without any other test noticing.
-func TestRateLimit_ProductionLimiterHasTheCap(t *testing.T) {
-	if maxBuckets != 10_000 {
-		t.Fatalf("maxBuckets = %d, want 10000", maxBuckets)
-	}
-	built := newIPLimiter(RateLimitConfig{Name: "t", Every: time.Hour, Burst: 1, TTL: time.Hour}, discard())
-	if built.max != maxBuckets {
-		t.Errorf("production limiter max = %d, want %d", built.max, maxBuckets)
-	}
-
-	// And the cap really bites at that size, through the zero-means-default path
-	// as well as the explicit one.
-	for _, l := range []*ipLimiter{built, newTestLimiter(1, 0, time.Hour)} {
-		now := time.Unix(1000, 0)
-		for i := range maxBuckets + 5 {
-			l.allow("10."+strconv.Itoa(i>>16)+"."+strconv.Itoa(i>>8&255)+"."+strconv.Itoa(i&255), now)
+		h.ServeHTTP(w, requestFrom("198.51.100.1"))
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatalf("a newcomer at the cap = %d, want 429 (fail closed)", w.Code)
 		}
-		if got := l.size(); got != maxBuckets {
-			t.Errorf("limiter held %d buckets after %d clients, want the cap %d", got, maxBuckets+5, maxBuckets)
-		}
+	}
+	if n := strings.Count(logged.String(), "rate limiter full"); n != 1 {
+		t.Errorf("full-table line logged %d times for 3 refusals, want 1", n)
+	}
+	if !strings.Contains(logged.String(), "limiter=flood") {
+		t.Errorf("full-table line does not name the limiter: %s", logged.String())
 	}
 }

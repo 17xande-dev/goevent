@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/mailer"
+	"github.com/17xande-dev/ratelimit/clientip"
 )
 
 // Config is the fully resolved configuration for one server process.
@@ -121,8 +121,8 @@ type Config struct {
 	// It describes what is actually in front of the server, and naming a header
 	// nothing is setting lets a client claim any IP it likes — which the payment
 	// callback's source-IP check and the per-IP rate limits both rely on. See
-	// middleware.ClientIPSource for what each value means.
-	ClientIPSource middleware.ClientIPSource
+	// clientip.ParseSource for what each value means.
+	ClientIPSource clientip.Source
 
 	// CookieSecure is derived from BaseURL rather than configured separately:
 	// an HTTPS deployment always wants Secure cookies, and localhost
@@ -562,8 +562,7 @@ func Load() (Config, error) {
 				"use CLIENT_IP_SOURCE=forwarded for what TRUST_PROXY_IP=true did, " +
 				"CLIENT_IP_SOURCE=cloudflare behind Cloudflare, or unset it for remote")
 	}
-	clientIPSource, sourceErr := middleware.ParseClientIPSource(
-		env("CLIENT_IP_SOURCE", string(middleware.ClientIPRemote)))
+	clientIPSource, sourceErr := clientip.ParseSource(env("CLIENT_IP_SOURCE", "remote"))
 	if sourceErr != nil {
 		return Config{}, fmt.Errorf("config: CLIENT_IP_SOURCE: %w", sourceErr)
 	}

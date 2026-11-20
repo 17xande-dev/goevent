@@ -2,13 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/17xande-dev/goevent/internal/middleware"
 )
 
 // setRequired sets every required var to something valid, so each test can
@@ -448,6 +448,16 @@ func TestBlob_PublicOrigin(t *testing.T) {
 func TestLoad_ClientIPSource(t *testing.T) {
 	setRequired(t)
 
+	// A request from an untrusted-by-construction peer claiming addresses in both
+	// headers. Which, if either, the Source believes is the whole mapping.
+	req := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = "203.0.113.7:54321"
+		r.Header.Set("X-Forwarded-For", "198.51.100.1")
+		r.Header.Set("CF-Connecting-IP", "192.0.2.50")
+		return r
+	}
+
 	// remote by default: believing a header without a proxy in front that sets it
 	// lets a client claim any source IP, which is one of the checks on the
 	// payment callback.
@@ -455,26 +465,44 @@ func TestLoad_ClientIPSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.ClientIPSource != middleware.ClientIPRemote {
-		t.Errorf("default ClientIPSource = %q, want %q", c.ClientIPSource, middleware.ClientIPRemote)
+	if got := c.ClientIPSource.Addr(req()).String(); got != "203.0.113.7" {
+		t.Errorf("default source resolved %s, want the peer 203.0.113.7", got)
 	}
 
-	for _, want := range []middleware.ClientIPSource{
-		middleware.ClientIPRemote,
-		middleware.ClientIPForwarded,
-		middleware.ClientIPCloudflare,
+	for value, want := range map[string]string{
+		"remote":       "203.0.113.7", // headers ignored
+		"forwarded":    "198.51.100.1",
+		"cloudflare":   "192.0.2.50",
+		"  cloudflare": "192.0.2.50",
 	} {
-		t.Setenv("CLIENT_IP_SOURCE", string(want))
-		if c, err = Load(); err != nil || c.ClientIPSource != want {
-			t.Errorf("CLIENT_IP_SOURCE=%s: got %q, %v", want, c.ClientIPSource, err)
+		t.Setenv("CLIENT_IP_SOURCE", value)
+		c, err = Load()
+		if err != nil {
+			t.Errorf("CLIENT_IP_SOURCE=%q: %v", value, err)
+			continue
 		}
+		if got := c.ClientIPSource.Addr(req()).String(); got != want {
+			t.Errorf("CLIENT_IP_SOURCE=%q resolved %s, want %s", value, got, want)
+		}
+	}
+
+	// cloudflare reads no X-Forwarded-For fallback: with only that header the
+	// peer is the key.
+	t.Setenv("CLIENT_IP_SOURCE", "cloudflare")
+	c, _ = Load()
+	r := req()
+	r.Header.Del("CF-Connecting-IP")
+	if got := c.ClientIPSource.Addr(r).String(); got != "203.0.113.7" {
+		t.Errorf("cloudflare without its header resolved %s, want the peer", got)
 	}
 
 	// A typo is refused rather than silently falling back, because every value
 	// here is load-bearing for the rate limits and the callback's source-IP check.
-	t.Setenv("CLIENT_IP_SOURCE", "cloudlfare")
-	if _, err = Load(); err == nil {
-		t.Error("a misspelt CLIENT_IP_SOURCE was accepted")
+	for _, bad := range []string{"cloudlfare", "Cloudflare", "true", "xff"} {
+		t.Setenv("CLIENT_IP_SOURCE", bad)
+		if _, err = Load(); err == nil {
+			t.Errorf("CLIENT_IP_SOURCE=%q was accepted", bad)
+		}
 	}
 }
 

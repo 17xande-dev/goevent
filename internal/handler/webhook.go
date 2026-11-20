@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/payment"
 )
@@ -69,7 +68,10 @@ func (h *Handler) paymentCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceIP := middleware.ClientIP(r, h.cfg.ClientIPSource)
+	sourceIP := ""
+	if addr := h.cfg.ClientIPSource.Addr(r); addr.IsValid() {
+		sourceIP = addr.String()
+	}
 	cb, err := gateway.ParseCallback(r.Context(), payment.Notification{
 		Body: body, Header: r.Header, SourceIP: sourceIP,
 	})

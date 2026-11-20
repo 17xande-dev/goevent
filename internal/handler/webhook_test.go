@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/config"
-	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/payment"
 	"github.com/17xande-dev/payment/payfast"
+	"github.com/17xande-dev/ratelimit/clientip"
 )
 
 func TestPayFastCallback_UsesBareClientIPFromTrustedHeader(t *testing.T) {
@@ -37,16 +37,21 @@ func TestPayFastCallback_UsesBareClientIPFromTrustedHeader(t *testing.T) {
 
 	for _, tc := range []struct {
 		name, header, value string
-		source              middleware.ClientIPSource
+		source              string
 		wantPaid            bool
 	}{
-		{"forwarded", "X-Forwarded-For", "197.97.145.150:4711, 10.0.0.1", middleware.ClientIPForwarded, true},
-		{"cloudflare", "CF-Connecting-IP", "197.97.145.150:4711", middleware.ClientIPCloudflare, true},
-		{"outside allowlist", "X-Forwarded-For", "198.51.100.7:4711", middleware.ClientIPForwarded, false},
+		{"forwarded", "X-Forwarded-For", "197.97.145.150:4711, 10.0.0.1", "forwarded", true},
+		{"cloudflare", "CF-Connecting-IP", "197.97.145.150:4711", "cloudflare", true},
+		{"remote ignores a spoofed allowed address", "X-Forwarded-For", "197.97.145.150", "remote", false},
+		{"outside allowlist", "X-Forwarded-For", "198.51.100.7:4711", "forwarded", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newAppWith(t, []payment.Gateway{gateway}, func(cfg *config.Config) {
-				cfg.ClientIPSource = tc.source
+				src, err := clientip.ParseSource(tc.source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cfg.ClientIPSource = src
 			})
 			e, adult, _ := published(t, s, 10)
 			form := registerForm(t, s, e, map[string]int{adult.ID: 1})

@@ -17,6 +17,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/payment"
+	"github.com/17xande-dev/ratelimit/clientip"
 	"github.com/justinas/nosurf"
 )
 
@@ -72,7 +73,7 @@ type limiters struct {
 // perMinute builds a limiter allowing n requests a minute, or a pass-through when
 // n is zero. Burst is a third of the allowance, minimum two, so a person who
 // double-clicks is never the one who trips it.
-func perMinute(name string, n int, source middleware.ClientIPSource, log *slog.Logger, exceeded http.Handler) middleware.Middleware {
+func perMinute(name string, n int, source clientip.Source, log *slog.Logger, exceeded http.Handler) middleware.Middleware {
 	if n <= 0 {
 		log.Warn("rate limiting is disabled for a surface that has one available", "limiter", name)
 		return func(next http.Handler) http.Handler { return next }
