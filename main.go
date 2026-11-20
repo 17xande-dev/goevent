@@ -27,12 +27,12 @@ import (
 	"github.com/17xande-dev/goevent/internal/handler"
 	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
-	"github.com/17xande-dev/goevent/internal/payment"
-	"github.com/17xande-dev/goevent/internal/payment/payfast"
-	"github.com/17xande-dev/goevent/internal/payment/snapscan"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/mailer/msauth"
+	"github.com/17xande-dev/payment"
+	"github.com/17xande-dev/payment/payfast"
+	"github.com/17xande-dev/payment/snapscan"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

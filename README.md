@@ -80,7 +80,7 @@ make gate          # fmt-check, vet, build, sqlc-check, test, then vulncheck
 |---|---|---|
 | Database | Postgres via pgx, sqlc, goose | — (parity with gostore; the check-in app may read the same database) |
 | People | Contact and attendee details live on each registration; no accounts, no people database | Check-in needing household lookup by phone |
-| Payments | Pay in full online (PayFast or SnapScan), free events, cash or EFT recorded by an admin | Deposits and balances — the schema already records payments as a list |
+| Payments | Pay in full online (PayFast or SnapScan via [`github.com/17xande-dev/payment`](https://github.com/17xande-dev/payment)), free events, cash or EFT recorded by an admin | Deposits and balances — the schema already records payments as a list |
 | No gateway configured | Allowed: free and manually-settled events only | — |
 | Capacity | A pending registration holds its seats for 15 minutes; a payment arriving after the hold lapsed is never refused, but flagged *oversold* | — |
 | Refunds | In the gateway's own dashboard | A gateway with a refund API worth wiring up |
@@ -96,7 +96,6 @@ make gate          # fmt-check, vet, build, sqlc-check, test, then vulncheck
 | Multi-date events | An `event_times` table | The first recurring or multi-session event |
 | Check-in app | A separate app reading goevent through an API | Kids' check-in: rooms, security labels, check-out |
 | More gateways | Yoco, Ozow, Paystack, Peach | Demand from an adopter |
-| Shared payment module | Extract `internal/payment` from gostore and goevent | Both apps stable |
 | Discount codes, waitlists, reminders | — | After the MVP |
 
 ## Licence

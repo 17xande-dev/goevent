@@ -77,7 +77,7 @@ func TestMail_PaidConfirmationGoesOnceAfterThePayment(t *testing.T) {
 		t.Fatalf("%d emails before anything was paid", n)
 	}
 
-	paymentID := s.gateway.Requests()[0].PaymentID
+	paymentID := s.gateway.Requests()[0].Reference
 	callback(t, s, paymentID, "COMPLETE", 45000)
 	callback(t, s, paymentID, "COMPLETE", 45000) // the gateway retries
 	s.handler.ProcessMail(t.Context())

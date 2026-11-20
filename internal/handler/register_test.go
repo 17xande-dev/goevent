@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/payment"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/payment"
 )
 
 // published makes a published event a week out with a paid ticket type capped
@@ -186,7 +186,10 @@ func TestRegister_PaidHandsOverAndTheCallbackConfirms(t *testing.T) {
 		!strings.Contains(reqs[0].ItemName, reg.Reference) {
 		t.Fatalf("gateway requests = %+v", reqs)
 	}
-	paymentID := reqs[0].PaymentID
+	paymentID := reqs[0].Reference
+	if got := between(t, body, `name="reference" value="`, `"`); got != paymentID {
+		t.Errorf("fake hand-over reference = %q, want %q", got, paymentID)
+	}
 
 	// The gateway's notification: outside CSRF, with no token, setting no cookie.
 	cb := callback(t, s, paymentID, "COMPLETE", 90000)
@@ -197,17 +200,37 @@ func TestRegister_PaidHandsOverAndTheCallbackConfirms(t *testing.T) {
 		t.Fatalf("after payment: %q", got.Status)
 	}
 
-	// The browser that registered is offered its registration on the return page…
-	_, ret := get(t, s.srv, "/checkout/success?payment="+paymentID)
-	if !strings.Contains(ret, "Payment received") || !strings.Contains(ret, "/r/"+reg.Reference+"?t=") ||
-		!strings.Contains(ret, reg.ContactEmail) {
-		t.Errorf("return page for the registrant:\n%s", excerpt(ret))
+	// Both URL formats must preserve the same cookie check for the registration link.
+	for _, tc := range []struct{ name, query string }{
+		{"ref", "?ref=" + paymentID},
+		{"legacy payment", "?payment=" + paymentID},
+		{"ref takes precedence", "?ref=" + paymentID + "&payment=unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := "/checkout/success" + tc.query
+			res, ret := get(t, s.srv, path)
+			if res.StatusCode != http.StatusOK || !strings.Contains(ret, "Payment received") ||
+				!strings.Contains(ret, "/r/"+reg.Reference+"?t=") || !strings.Contains(ret, reg.ContactEmail) {
+				t.Errorf("return page for the registrant = %d:\n%s", res.StatusCode, excerpt(ret))
+			}
+			ret = stranger(t, s.srv.URL+path)
+			if !strings.Contains(ret, "Payment received") || strings.Contains(ret, "/r/") || strings.Contains(ret, reg.ContactEmail) {
+				t.Errorf("return page for a stranger links the registration or shows its address:\n%s", excerpt(ret))
+			}
+			res, ret = get(t, s.srv, "/checkout/cancel"+tc.query)
+			if res.StatusCode != http.StatusOK || !strings.Contains(ret, "Payment cancelled") ||
+				!strings.Contains(ret, reg.Reference) {
+				t.Errorf("cancel page = %d:\n%s", res.StatusCode, excerpt(ret))
+			}
+		})
 	}
-	// …and anybody else holding the payment id — the gateway knows it — is not.
-	ret = stranger(t, s.srv.URL+"/checkout/success?payment="+paymentID)
-	if !strings.Contains(ret, "Payment received") || strings.Contains(ret, "/r/") || strings.Contains(ret, reg.ContactEmail) {
-		t.Errorf("return page for a stranger links the registration or shows its address:\n%s", excerpt(ret))
-	}
+	t.Run("neither key", func(t *testing.T) {
+		res, ret := get(t, s.srv, "/checkout/success")
+		if res.StatusCode != http.StatusOK || !strings.Contains(ret, "If you paid, your confirmation") ||
+			strings.Contains(ret, "Payment received") || strings.Contains(ret, "/r/") || strings.Contains(ret, reg.ContactEmail) {
+			t.Errorf("return page without a reference = %d:\n%s", res.StatusCode, excerpt(ret))
+		}
+	})
 }
 
 // stranger fetches a page as a different browser: no cookies at all.
@@ -245,7 +268,7 @@ func TestCallback_TheWrongAmountConfirmsNothing(t *testing.T) {
 	s := newApp(t)
 	e, adult, _ := published(t, s, 10)
 	submit(t, s, e, registerForm(t, s, e, map[string]int{adult.ID: 1}))
-	paymentID := s.gateway.Requests()[0].PaymentID
+	paymentID := s.gateway.Requests()[0].Reference
 
 	if res := callback(t, s, paymentID, "COMPLETE", 100); res.StatusCode != http.StatusOK {
 		t.Errorf("a mismatched callback = %d; it is acknowledged, not retried", res.StatusCode)
@@ -348,21 +371,27 @@ func TestRegister_NothingChosenGoesBack(t *testing.T) {
 
 func TestCheckoutStatus_RedirectsHTMXOncePaid(t *testing.T) {
 	s := newApp(t)
+	s.gateway.Kind = payment.HandoverLink
 	e, adult, _ := published(t, s, 10)
-	submit(t, s, e, registerForm(t, s, e, map[string]int{adult.ID: 1}))
-	paymentID := s.gateway.Requests()[0].PaymentID
+	res, handover := submit(t, s, e, registerForm(t, s, e, map[string]int{adult.ID: 1}))
+	paymentID := s.gateway.Requests()[0].Reference
+	pollPath := "/checkout/status?ref=" + paymentID
+	if res.StatusCode != http.StatusOK || !strings.Contains(handover, `hx-get="`+pollPath+`"`) {
+		t.Fatalf("QR hand-over = %d, want a poll for %s:\n%s", res.StatusCode, pollPath, excerpt(handover))
+	}
 
-	req := newRequest(t, s.srv, http.MethodGet, "/checkout/status?payment="+paymentID, nil)
+	req := newRequest(t, s.srv, http.MethodGet, pollPath, nil)
 	req.Header.Set("HX-Request", "true")
 	res, body := do(t, s.srv, req)
-	if res.Header.Get("HX-Redirect") != "" || !strings.Contains(body, "Waiting") || strings.Contains(body, "<html") {
+	if res.Header.Get("HX-Redirect") != "" || !strings.Contains(body, "Waiting") ||
+		!strings.Contains(body, `hx-get="`+pollPath+`"`) || strings.Contains(body, "<html") {
 		t.Errorf("pending poll = %q %s", res.Header.Get("HX-Redirect"), excerpt(body))
 	}
 	callback(t, s, paymentID, "COMPLETE", 45000)
-	req = newRequest(t, s.srv, http.MethodGet, "/checkout/status?payment="+paymentID, nil)
+	req = newRequest(t, s.srv, http.MethodGet, pollPath, nil)
 	req.Header.Set("HX-Request", "true")
 	res, _ = do(t, s.srv, req)
-	if res.Header.Get("HX-Redirect") != "/checkout/success?payment="+paymentID {
+	if res.Header.Get("HX-Redirect") != "/checkout/success?ref="+paymentID {
 		t.Errorf("paid poll HX-Redirect = %q", res.Header.Get("HX-Redirect"))
 	}
 }

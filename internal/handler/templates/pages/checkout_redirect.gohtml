@@ -30,7 +30,7 @@
   </figure>
 </div>
 
-<div id="payment-status" hx-get="/checkout/status?payment={{.Payment.ID}}" hx-trigger="load delay:5s" hx-swap="outerHTML">
+<div id="payment-status" hx-get="/checkout/status?ref={{.Payment.ID}}" hx-trigger="load delay:5s" hx-swap="outerHTML">
   <p class="muted">Your places are held for 15 minutes. Your tickets are emailed as soon as the payment goes through.</p>
 </div>
 

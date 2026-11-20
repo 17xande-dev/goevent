@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/payment"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/goevent/internal/validate"
+	"github.com/17xande-dev/payment"
 )
 
 // The registration form: who is coming, the questions, the person registering
@@ -345,7 +345,7 @@ func (h *Handler) handover(w http.ResponseWriter, r *http.Request, e events.Even
 		return
 	}
 	ho, err := g.Handover(payment.Request{
-		PaymentID: p.ID, AmountCents: p.AmountCents, Currency: p.Currency,
+		Reference: p.ID, AmountCents: p.AmountCents, Currency: p.Currency,
 		ItemName:  e.Title + " " + reg.Reference,
 		NameFirst: reg.ContactFirst, NameLast: reg.ContactLast, Email: reg.ContactEmail,
 	})

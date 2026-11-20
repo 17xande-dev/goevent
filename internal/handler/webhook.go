@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"github.com/17xande-dev/goevent/internal/middleware"
-	"github.com/17xande-dev/goevent/internal/payment"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/payment"
 )
 
 // maxCallbackBytes caps what this endpoint will read. A gateway's notification is
@@ -93,10 +93,10 @@ func (h *Handler) paymentCallback(w http.ResponseWriter, r *http.Request) {
 // applyCallback is everything that happens once a notification is proven
 // genuine. It returns an error only for a failure worth the gateway retrying.
 func (h *Handler) applyCallback(r *http.Request, gateway payment.Gateway, cb payment.Callback) error {
-	log := h.log.With("gateway", gateway.Name(), "payment", cb.PaymentID,
+	log := h.log.With("gateway", gateway.Name(), "payment", cb.Reference,
 		"gateway_ref", cb.Ref, "gateway_status", cb.Status)
 	n := registrations.Notice{
-		PaymentID: cb.PaymentID, Gateway: gateway.Name(), Ref: cb.Ref, Status: cb.Status,
+		PaymentID: cb.Reference, Gateway: gateway.Name(), Ref: cb.Ref, Status: cb.Status,
 		AmountCents: cb.AmountCents, Amount: cb.Amount, Raw: string(cb.Raw),
 	}
 

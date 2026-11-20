@@ -16,9 +16,9 @@ import (
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/middleware"
-	"github.com/17xande-dev/goevent/internal/payment"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
+	"github.com/17xande-dev/payment"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

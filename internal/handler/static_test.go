@@ -328,11 +328,11 @@ func TestAssets_EveryServedPageIsFreeOfInlineStylesAndHandlers(t *testing.T) {
 	manage := res.Header.Get("Location")
 	handover := registerForm(t, s, pe, map[string]int{adult.ID: 1})
 	_, handoverPage := submit(t, s, pe, handover)
-	paymentID := s.gateway.Requests()[0].PaymentID
+	paymentID := s.gateway.Requests()[0].Reference
 	pages := map[string]string{"hand-over": handoverPage}
 	for _, path := range []string{
 		"/events", "/events/" + pe.Slug, "/events/" + pe.Slug + "/register?qty." + child.ID + "=2",
-		manage, "/checkout/success?payment=" + paymentID, "/checkout/status?payment=" + paymentID,
+		manage, "/checkout/success?ref=" + paymentID, "/checkout/status?ref=" + paymentID,
 		// And the admin's view of what just happened.
 		"/admin/registrations", "/admin/registrations/" + onlyPendingRegistration(t, s),
 		"/admin/events/" + pe.ID,

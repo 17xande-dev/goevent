@@ -18,7 +18,7 @@
   <p><strong>That payment did not go through.</strong> Your places are held for a little while if you would
   like to <a href="/events/{{.Event.Slug}}">try again</a>.</p>
 {{else}}
-  <p hx-get="/checkout/status?payment={{.Payment.ID}}" hx-trigger="every 5s" hx-swap="outerHTML" class="muted">
+  <p hx-get="/checkout/status?ref={{.Payment.ID}}" hx-trigger="every 5s" hx-swap="outerHTML" class="muted">
     Waiting for the payment to be confirmed… You can close this page: your tickets are emailed either way.
   </p>
 {{end}}

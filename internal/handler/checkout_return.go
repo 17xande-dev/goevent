@@ -55,7 +55,7 @@ func (h *Handler) checkoutReturn(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) checkoutStatus(w http.ResponseWriter, r *http.Request) {
 	data := h.returnData(r)
 	if data.Paid() && isHTMX(r) {
-		w.Header().Set("HX-Redirect", "/checkout/success?payment="+url.QueryEscape(data.Payment.ID))
+		w.Header().Set("HX-Redirect", "/checkout/success?ref="+url.QueryEscape(data.Payment.ID))
 	}
 	name := "checkout_status"
 	if isHTMX(r) && r.Header.Get("HX-Boosted") != "true" {
@@ -66,7 +66,13 @@ func (h *Handler) checkoutStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) returnData(r *http.Request) checkoutReturnPage {
 	data := checkoutReturnPage{page: h.newPage(r, "Thank you")}
-	p, err := h.regs.Payment(r.Context(), r.URL.Query().Get("payment"))
+	query := r.URL.Query()
+	ref := query.Get("ref")
+	// TODO(remove after 2027-01-31): Accept old links for checkouts started before the deploy.
+	if ref == "" {
+		ref = query.Get("payment")
+	}
+	p, err := h.regs.Payment(r.Context(), ref)
 	if err != nil {
 		return data
 	}

@@ -1,7 +1,7 @@
 # Payments
 
 Two gateways ship, **PayFast** and **SnapScan**, both settling in rand, behind a small
-`payment.Gateway` interface in [`internal/payment`](../internal/payment/gateway.go). A
+`payment.Gateway` interface in [`github.com/17xande-dev/payment`](https://github.com/17xande-dev/payment). A
 deployment enables either, both, or neither. Alongside them, an event can let people
 **pay later** by EFT or cash, which an administrator records by hand.
 
@@ -49,11 +49,13 @@ as long as the hold still stands.
 The id a gateway is given, and echoes back on its notification, is the **payment's** id,
 not the registration's: PayFast's `m_payment_id`, SnapScan's `id`. A registration can have
 several payments (a failed attempt and a retry, or several manual part-payments), and each
-notification settles exactly the payment it names. The return pages
-(`/checkout/success?payment=…`, `/checkout/cancel?payment=…`) and the QR page's status poll
-(`/checkout/status?payment=…`) are found the same way, and show only whether that payment
-went through. The link to the registration itself is shown only to the browser holding the
-cookie the checkout set.
+notification settles exactly the payment it names. The shared module calls this id
+`Reference`, distinct from `Callback.Ref`, which is the gateway's transaction id.
+The return pages (`/checkout/success?ref=…`, `/checkout/cancel?ref=…`) and the QR page's
+status poll (`/checkout/status?ref=…`) use the payment id and report whether it went through.
+The link to the registration itself is shown only to the browser holding the cookie the
+checkout set. The old `?payment=` key is accepted for one release for in-flight checkouts
+(remove after 2027-01-31).
 
 A browser returning to a success URL proves nothing. Only an authenticated notification
 can mark a payment paid.
@@ -210,7 +212,7 @@ taken, nothing recorded. The deployments set it for you: `forwarded` behind Cadd
 ### How a PayFast notification is authenticated
 
 The **ITN**, PayFast's form-encoded POST to the notify URL, passes four checks, in this
-order, before anything happens ([`internal/payment/payfast/itn.go`](../internal/payment/payfast/itn.go)):
+order, before anything happens ([`payfast/itn.go`](https://github.com/17xande-dev/payment/blob/v0.1.0/payfast/itn.go)):
 
 1. **The signature recomputes** over the fields exactly as received, in the order received.
 2. **The source IP** is in PayFast's published ranges, or `PAYFAST_ALLOWED_CIDRS`.
@@ -223,7 +225,7 @@ None is sufficient alone. Only `payment_status=COMPLETE` means the money is take
 ### The PayFast signature
 
 Three details account for nearly every PayFast integration failure, and the package
-comment in [`internal/payment/payfast`](../internal/payment/payfast/payfast.go) spells them
+comment in [`payment/payfast`](https://github.com/17xande-dev/payment/blob/v0.1.0/payfast/payfast.go) spells them
 out:
 
 - **Field order is submission order, not alphabetical.** This is why `payment.Field` is a
