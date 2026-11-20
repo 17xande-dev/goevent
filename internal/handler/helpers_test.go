@@ -29,8 +29,7 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	t.Helper()
 
 	pool := dbtest.Pool(t)
-	gateway := payment.NewFake()
-	d := testDeps(t, pool, cfg, templateDir, blob.NewFake(), gateway)
+	d := testDeps(t, pool, cfg, templateDir, blob.NewFake())
 	h := New(d)
 
 	mux := http.NewServeMux()
@@ -40,9 +39,11 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	mux.Handle("/admin/", firstParty)
 	mux.Handle(RegisterPath, firstParty)
 
+	forms, images := d.Gateways.CSP()
 	srv := httptest.NewServer(middleware.Chain(mux, middleware.SecurityHeaders(middleware.Policy{
 		FrameAncestors: cfg.EmbedOrigins,
-		FormActions:    []string{gateway.CSP().FormAction},
+		FormActions:    forms,
+		ImgSources:     images,
 	})))
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)

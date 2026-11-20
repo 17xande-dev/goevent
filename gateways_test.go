@@ -2,11 +2,14 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/config"
+	"github.com/17xande-dev/goevent/internal/handler"
 )
 
 // gatewayConfig is the smallest config newGateways reads, with both providers
@@ -138,5 +141,54 @@ func TestNewGateways_DeclareTheirCSPOrigins(t *testing.T) {
 	}
 	if _, images := payfastOnly.CSP(); len(images) != 0 {
 		t.Errorf("img-src = %q for a site with no QR gateway", images)
+	}
+}
+
+// Chromium checks form-action on the hosted checkout redirect as well as on
+// the signed POST. Check the header from the production routes so that losing
+// an origin anywhere between gateway construction and middleware fails here.
+func TestNewGateways_PayFastFormAction(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	live := []string{"'self'", "https://www.payfast.co.za", "https://payment.payfast.io"}
+	for _, tc := range []struct {
+		name     string
+		sandbox  bool
+		snapscan bool
+		want     []string
+	}{
+		{name: "live", want: live},
+		{name: "live with SnapScan", snapscan: true, want: live},
+		{name: "sandbox", sandbox: true, want: []string{"'self'", "https://sandbox.payfast.co.za"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := gatewayConfig()
+			cfg.PayFast.Sandbox = tc.sandbox
+			if !tc.snapscan {
+				cfg.SnapScan = config.SnapScan{}
+			}
+			gateways, err := newGateways(cfg, log)
+			if err != nil {
+				t.Fatalf("newGateways: %v", err)
+			}
+			h := handler.New(handler.Deps{Config: cfg, Log: log, Gateways: gateways})
+			rec := httptest.NewRecorder()
+			// The root redirect is cheap and has the same security headers as the handover.
+			routes(cfg, h, gateways, nil, nil, log).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("GET / = %d, want %d", rec.Code, http.StatusSeeOther)
+			}
+			csp := rec.Header().Get("Content-Security-Policy")
+			var formActions [][]string
+			for directive := range strings.SplitSeq(csp, ";") {
+				fields := strings.Fields(directive)
+				if len(fields) > 0 && fields[0] == "form-action" {
+					formActions = append(formActions, fields[1:])
+				}
+			}
+			// Compare whole source tokens and reject extras, including look-alikes.
+			if len(formActions) != 1 || !slices.Equal(formActions[0], tc.want) {
+				t.Errorf("form-action source lists = %q, want exactly one with %q (CSP: %q)", formActions, tc.want, csp)
+			}
+		})
 	}
 }
