@@ -24,7 +24,7 @@ func admin(t *testing.T, f fixture) string {
 func TestRecordPayment_PartsThenFullConfirmsOnce(t *testing.T) {
 	f := open(t, 10, func(e *events.Event) { e.PayLater, e.PayLaterInstructions = true, "EFT" })
 	who := admin(t, f)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult, f.adult), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult, f.adult), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRecordPayment_PartsThenFullConfirmsOnce(t *testing.T) {
 func TestCancel_ReleasesSeatsAndRefusesLaterPayment(t *testing.T) {
 	f := open(t, 1, func(e *events.Event) { e.PayLater, e.PayLaterInstructions = true, "EFT" })
 	who := admin(t, f)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestCancel_ReleasesSeatsAndRefusesLaterPayment(t *testing.T) {
 		t.Errorf("cancelling twice: err = %v", err)
 	}
 	// The one seat is free again.
-	if _, err := f.regs.Checkout(t.Context(), f.order("k2", registrations.MethodLater, f.adult), now); err != nil {
+	if _, err := f.regs.Checkout(t.Context(), f.order("k2", registrations.MethodLater, f.adult), f.now); err != nil {
 		t.Errorf("the cancelled seat was not released: %v", err)
 	}
 	_, err = f.regs.RecordPayment(t.Context(), registrations.Manual{RegistrationID: res.Registration.ID,
@@ -87,7 +87,7 @@ func TestCancel_ReleasesSeatsAndRefusesLaterPayment(t *testing.T) {
 
 func TestCancelAttendee_ReleasesOneSeat(t *testing.T) {
 	f := open(t, 2)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", "fake", f.adult, f.adult), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", "fake", f.adult, f.adult), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestCancelAttendee_ReleasesOneSeat(t *testing.T) {
 		t.Errorf("cancelling twice: err = %v", err)
 	}
 	// Another registration's attendee, through this one: refused.
-	other, _ := f.regs.Checkout(t.Context(), f.order("k2", "", f.free), now)
+	other, _ := f.regs.Checkout(t.Context(), f.order("k2", "", f.free), f.now)
 	if err := f.regs.CancelAttendee(t.Context(), res.Registration.ID, other.Attendees[0].ID); !errors.Is(err, registrations.ErrNotFound) {
 		t.Errorf("cross-registration cancel: err = %v", err)
 	}
@@ -116,12 +116,12 @@ func TestEventStatsAndExport(t *testing.T) {
 	}
 	o := f.order("free", "", f.free, f.free)
 	o.Attendees[0].Answers = []registrations.Answer{{QuestionID: q.ID, Label: q.Label, Value: "Vegetarian"}}
-	if _, err := f.regs.Checkout(t.Context(), o, now); err != nil {
+	if _, err := f.regs.Checkout(t.Context(), o, f.now); err != nil {
 		t.Fatal(err)
 	}
-	paid, _ := f.regs.Checkout(t.Context(), f.order("paid", "fake", f.adult), now)
+	paid, _ := f.regs.Checkout(t.Context(), f.order("paid", "fake", f.adult), f.now)
 	f.regs.MarkPaid(t.Context(), notice(paid.Payment, "pf-1"), nil)
-	if _, err := f.regs.Checkout(t.Context(), f.order("held", "fake", f.adult), now); err != nil {
+	if _, err := f.regs.Checkout(t.Context(), f.order("held", "fake", f.adult), f.now); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,7 +12,7 @@ import (
 func TestCheckIn_OnceThenAlreadyThenUndo(t *testing.T) {
 	f := open(t, 10)
 	who := admin(t, f)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free, f.free), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free, f.free), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestCheckIn_OnceThenAlreadyThenUndo(t *testing.T) {
 
 func TestCheckIn_ConcurrentScansAdmitOnce(t *testing.T) {
 	f := open(t, 10)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +78,11 @@ func TestCheckIn_ConcurrentScansAdmitOnce(t *testing.T) {
 
 func TestCheckIn_SaysWhyNot(t *testing.T) {
 	f := open(t, 10, func(e *events.Event) { e.PayLater, e.PayLaterInstructions = true, "EFT" })
-	unpaid, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult), now)
+	unpaid, err := f.regs.Checkout(t.Context(), f.order("k1", registrations.MethodLater, f.adult), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	free, err := f.regs.Checkout(t.Context(), f.order("k2", "", f.free, f.free), now)
+	free, err := f.regs.Checkout(t.Context(), f.order("k2", "", f.free, f.free), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestCheckIn_SaysWhyNot(t *testing.T) {
 
 func TestSearchDoor(t *testing.T) {
 	f := open(t, 10)
-	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free), now)
+	res, err := f.regs.Checkout(t.Context(), f.order("k1", "", f.free), f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
