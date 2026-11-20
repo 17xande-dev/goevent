@@ -134,7 +134,7 @@ func (h *Handler) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := auth.HashPassword(password, auth.DefaultParams)
+	hash, err := auth.HashPassword(r.Context(), password)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -295,7 +295,7 @@ func (h *Handler) adminUserPasswordReset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	hash, err := auth.HashPassword(password, auth.DefaultParams)
+	hash, err := auth.HashPassword(r.Context(), password)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -353,7 +353,7 @@ func (h *Handler) adminPasswordChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := auth.HashPassword(password, auth.DefaultParams)
+	hash, err := auth.HashPassword(r.Context(), password)
 	if err != nil {
 		h.serverError(w, r, err)
 		return

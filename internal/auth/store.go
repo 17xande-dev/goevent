@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/db/gen"
+	"github.com/17xande-dev/password"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,24 +43,6 @@ var ErrLastOwner = errors.New("auth: this is the last enabled owner")
 // count subquery is not sufficient without it.
 const ownerGuardLockID int64 = 8_675_309_002
 
-// dummyHash makes a sign-in for an address with no account cost what a wrong
-// password costs. Without it, the unknown case returns without doing any argon2
-// work at all, and the difference is measurable from outside.
-//
-// It is computed once, on first use rather than at package init, so that every
-// binary importing this package does not pay 64 MiB and ~100 ms to start —
-// notably the test binaries, which import it constantly. The one request that
-// triggers the computation is slower than its peers, which is the harmless
-// direction: it makes an unknown address look *more* expensive, not less.
-var dummyHash = sync.OnceValue(func() string {
-	h, err := HashPassword("not a real password", DefaultParams)
-	if err != nil {
-		// Unreachable: DefaultParams is a constant this package controls.
-		panic("auth: cannot hash the dummy password: " + err.Error())
-	}
-	return h
-})
-
 // Store is the administrator accounts' persistence: the users themselves, their
 // live sessions, and the one-shot token that lets the first account be claimed.
 //
@@ -83,19 +65,19 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // `disabled` is examined *after* the password, because refusing a disabled
 // account before verifying would answer faster for a wrong password than a right
 // one, making the account's state an oracle for the password being correct.
-func (s *Store) Authenticate(ctx context.Context, email, password string) (User, error) {
+func (s *Store) Authenticate(ctx context.Context, email, pw string) (User, error) {
 	row, err := s.q.GetAdminUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Spend the same work an existing account would have cost, and
 			// discard the answer.
-			CheckPassword(dummyHash(), password)
+			_, _ = password.CheckDummy(ctx, pw)
 			return User{}, ErrBadCredentials
 		}
 		return User{}, translate(fmt.Errorf("auth: user by email: %w", err))
 	}
 
-	if !CheckPassword(row.PasswordHash, password) {
+	if ok, _, err := password.Check(ctx, row.PasswordHash, pw); err != nil || !ok {
 		return User{}, ErrBadCredentials
 	}
 	if row.Disabled {
@@ -120,12 +102,13 @@ func (s *Store) Authenticate(ctx context.Context, email, password string) (User,
 // signed in" column quietly wrong. A CSRF token proves a request came from our
 // form, not that the person at the keyboard owns the account, which is why the
 // form asks at all.
-func (s *Store) CheckPasswordFor(ctx context.Context, id, password string) (bool, error) {
+func (s *Store) CheckPasswordFor(ctx context.Context, id, pw string) (bool, error) {
 	row, err := s.q.GetAdminUser(ctx, id)
 	if err != nil {
 		return false, translate(fmt.Errorf("auth: user: %w", err))
 	}
-	return CheckPassword(row.PasswordHash, password), nil
+	ok, _, err := password.Check(ctx, row.PasswordHash, pw)
+	return err == nil && ok, nil
 }
 
 // Create stores a new administrator. passwordHash is a hash, never a password:
@@ -140,7 +123,7 @@ func (s *Store) Create(ctx context.Context, email, name, passwordHash string, ro
 	}
 	// Validated on the way in, so a malformed hash is refused here rather than
 	// becoming an account that can never sign in and nothing to say why.
-	if err := ParsePasswordHash(passwordHash); err != nil {
+	if err := validatePasswordHash(passwordHash); err != nil {
 		return User{}, err
 	}
 
@@ -230,7 +213,7 @@ func (s *Store) CountEnabledOwners(ctx context.Context) (int, error) {
 // mustChange is set when an administrator resets somebody else's password and
 // left false when somebody sets their own.
 func (s *Store) SetPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
-	if err := ParsePasswordHash(passwordHash); err != nil {
+	if err := validatePasswordHash(passwordHash); err != nil {
 		return err
 	}
 
@@ -456,7 +439,7 @@ func (s *Store) CheckSetupToken(ctx context.Context, token string) (bool, error)
 // exactly one gets a row and the other is refused. A read-then-write would let
 // both through and create two owners from one token.
 func (s *Store) ClaimSetup(ctx context.Context, token, email, name, passwordHash string) (User, error) {
-	if err := ParsePasswordHash(passwordHash); err != nil {
+	if err := validatePasswordHash(passwordHash); err != nil {
 		return User{}, err
 	}
 

@@ -9,15 +9,17 @@ import (
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/password"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // hash produces a password hash at the cheap parameters, because the real ones
 // cost 64 MiB and ~100 ms each and these tests make dozens.
-func hash(t *testing.T, password string) string {
+func hash(t *testing.T, pw string) string {
 	t.Helper()
-	h, err := HashPassword(password, cheapParams)
+	defer password.SetParamsForTesting(password.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32})()
+	h, err := HashPassword(t.Context(), pw)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -505,16 +507,19 @@ func TestClaimSetupWithNoTokenIsClosed(t *testing.T) {
 	}
 }
 
-// Authenticate must not be slower for an unknown address than for a known one
+// Authenticate must not be much faster for an unknown address than for a known one
 // with a wrong password, or response time tells an attacker which addresses have
 // accounts. This is a coarse check — it catches the "returns immediately with no
 // argon2 work at all" regression, which is the one that actually happens.
 func TestUnknownAddressCostsRoughlyWhatAWrongPasswordCosts(t *testing.T) {
 	s, _, ctx := newStore(t)
-	mustCreate(t, s, ctx, "live@example.com", "correct horse battery", RoleAdmin)
-	// Warm the dummy hash, which is computed on first use.
-	_, _ = s.Authenticate(ctx, "nobody@example.com", "x")
-
+	h, err := HashPassword(ctx, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "live@example.com", "", h, RoleAdmin, false); err != nil {
+		t.Fatal(err)
+	}
 	known := timeCall(func() { _, _ = s.Authenticate(ctx, "live@example.com", "wrong") })
 	unknown := timeCall(func() { _, _ = s.Authenticate(ctx, "nobody@example.com", "wrong") })
 

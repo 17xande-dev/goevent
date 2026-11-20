@@ -10,14 +10,15 @@ import (
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/password"
 )
 
 // cheapHash keeps these tests fast: they are about the middleware, not about how
 // expensive an argon2id hash is.
-func cheapHash(t *testing.T, password string) string {
+func cheapHash(t *testing.T, pw string) string {
 	t.Helper()
-	h, err := auth.HashPassword(password,
-		auth.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32})
+	t.Cleanup(password.SetParamsForTesting(password.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}))
+	h, err := auth.HashPassword(t.Context(), pw)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}

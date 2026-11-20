@@ -223,7 +223,7 @@ func (h *Handler) adminSetupClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := auth.HashPassword(password, auth.DefaultParams)
+	hash, err := auth.HashPassword(r.Context(), password)
 	if err != nil {
 		h.serverError(w, r, err)
 		return

@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/17xande-dev/mailer v0.3.0
+	github.com/17xande-dev/password v0.1.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.14
@@ -11,7 +12,6 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/justinas/nosurf v1.2.0
 	github.com/pressly/goose/v3 v3.29.0
-	golang.org/x/crypto v0.58.0
 	golang.org/x/time v0.16.0
 	rsc.io/qr v0.2.0
 )
@@ -33,6 +33,7 @@ require (
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/wneessen/go-mail v0.8.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect

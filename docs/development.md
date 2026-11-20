@@ -220,7 +220,7 @@ dependency.
 | [`jackc/pgx/v5`](https://github.com/jackc/pgx) | Postgres driver and pool. No cgo, so the binary stays static |
 | [`pressly/goose/v3`](https://github.com/pressly/goose) | Migrations, with advisory locking |
 | [`justinas/nosurf`](https://github.com/justinas/nosurf) | CSRF tokens and origin checks |
-| [`golang.org/x/crypto`](https://pkg.go.dev/golang.org/x/crypto) | `argon2` for admin passwords; `bcrypt` so older hashes still verify |
+| [`17xande-dev/password`](https://github.com/17xande-dev/password) | Argon2id hashing with a process-wide concurrency cap; older bcrypt hashes still verify. Password policy stays in goevent. |
 | [`golang.org/x/time`](https://pkg.go.dev/golang.org/x/time/rate) | The token bucket behind the rate limits |
 | [`17xande-dev/mailer`](https://github.com/17xande-dev/mailer) | Sending email behind one `Sender` interface: SMTP, XOAUTH2 for Exchange, Microsoft Graph, inline images. Shared with gostore. Pulls in [`wneessen/go-mail`](https://github.com/wneessen/go-mail) for MIME |
 | [`aws/aws-sdk-go-v2`](https://github.com/aws/aws-sdk-go-v2) (`service/s3`, `feature/s3/manager`, `credentials`) | Event images in S3-compatible storage (R2, GCS interop, RustFS). Configured with checksums "when required", which non-AWS stores need |

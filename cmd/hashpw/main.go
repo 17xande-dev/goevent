@@ -24,6 +24,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -46,7 +47,7 @@ func run() error {
 		return err
 	}
 
-	hash, err := auth.HashPassword(password, auth.DefaultParams)
+	hash, err := auth.HashPassword(context.Background(), password)
 	if err != nil {
 		return err
 	}

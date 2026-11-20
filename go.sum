@@ -1,5 +1,7 @@
 github.com/17xande-dev/mailer v0.3.0 h1:iK9RApl4GNYdhnvWb8af4ZFfWUhIS+YHq7mKR7p1Uo8=
 github.com/17xande-dev/mailer v0.3.0/go.mod h1:/s+gTKaMVwTz4go4OJLv8K9ApoSgPruzCZ5k8hV3UoA=
+github.com/17xande-dev/password v0.1.0 h1:ZjZJceKSnd5bZ5fPooKNLnngZU+K9c5hiPo4vSz1jok=
+github.com/17xande-dev/password v0.1.0/go.mod h1:k5baj87kSUM60Fg8e4jkx0MU7+4uPg1camTH2fysKNI=
 github.com/aws/aws-sdk-go-v2 v1.47.3 h1:HRoT/MkNi3bjO5xF4dCzLzvVmkvRGHj3/cLINDnJejk=
 github.com/aws/aws-sdk-go-v2 v1.47.3/go.mod h1:xSl+OSI5ZUw6bSMupWc218zE5Pl+65MCCu3ySWFY99A=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 h1:oiEmPz/YMMeh/JvAE8xSxNCIsvWE6lpFe4ZPlyFykQI=

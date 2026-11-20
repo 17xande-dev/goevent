@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
+	"github.com/17xande-dev/password"
 )
 
 func TestReadPassword(t *testing.T) {
@@ -37,16 +38,15 @@ func TestHashedPasswordVerifies(t *testing.T) {
 	// The hash this command prints must be one the server accepts, which is the
 	// whole point of the command existing.
 	// Cheap parameters: this asserts the round trip, not how expensive the hash is.
-	cheap := auth.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
-	hash, err := auth.HashPassword("correct horse battery staple", cheap)
+	t.Cleanup(password.SetParamsForTesting(password.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}))
+	hash, err := auth.HashPassword(t.Context(), "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	if !auth.CheckPassword(hash, "correct horse battery staple") {
-		t.Error("the generated hash does not verify the password it was made from")
+	if ok, _, err := password.Check(t.Context(), hash, "correct horse battery staple"); err != nil || !ok {
+		t.Errorf("the generated hash does not verify the password it was made from: %v", err)
 	}
-	// And it is a hash the server will accept at boot rather than refuse.
-	if err := auth.ParsePasswordHash(hash); err != nil {
-		t.Errorf("the generated hash would fail the boot-time check: %v", err)
+	if err := password.Validate(hash); err != nil {
+		t.Errorf("the generated hash would fail the store's format check: %v", err)
 	}
 }
