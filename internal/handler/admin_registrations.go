@@ -6,13 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
-	"unicode"
 
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/websec"
 )
 
 // The registrations admin: the list, one registration, the money recorded by
@@ -267,7 +266,7 @@ func (h *Handler) adminEventExport(w http.ResponseWriter, r *http.Request) {
 	for _, q := range qs {
 		header = append(header, q.Label)
 	}
-	cw.Write(cells(header))
+	cw.Write(websec.CSVRow(header...))
 	for _, row := range rows {
 		checkedIn := ""
 		if row.CheckedInAt != nil {
@@ -279,7 +278,7 @@ func (h *Handler) adminEventExport(w http.ResponseWriter, r *http.Request) {
 		for _, q := range qs {
 			rec = append(rec, row.Answers[q.ID])
 		}
-		cw.Write(cells(rec))
+		cw.Write(websec.CSVRow(rec...))
 	}
 	cw.Flush()
 	if err := cw.Error(); err != nil {
@@ -292,31 +291,4 @@ func (h *Handler) adminEventExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Write(buf.Bytes())
-}
-
-// csvCell defuses a cell a spreadsheet would read as a formula. Excel and
-// Sheets evaluate a cell beginning =, +, - or @ — so a name typed into a public
-// form becomes a live formula on a staff machine, and a +27… phone number is
-// the everyday case that trips it. A leading apostrophe makes it text.
-//
-// Leading control, format (BOM, zero-width space) and space characters are
-// stripped before the check, because spreadsheet importers can discard them
-// before they detect a formula, so " =1" would still run. Anything stripped
-// is dropped and the cell gains the apostrophe whatever follows.
-func csvCell(s string) string {
-	clean := strings.TrimLeftFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) })
-	prefix := len(clean) != len(s)
-	if prefix || (len(clean) > 0 && strings.ContainsRune("=+-@", rune(clean[0]))) {
-		return "'" + clean
-	}
-	return s
-}
-
-// cells applies csvCell to every cell of a record, on a copy.
-func cells(rec []string) []string {
-	out := make([]string, len(rec))
-	for i, c := range rec {
-		out[i] = csvCell(c)
-	}
-	return out
 }

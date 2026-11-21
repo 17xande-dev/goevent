@@ -287,6 +287,8 @@ func TestAdminAuth_NextCannotLeaveTheSite(t *testing.T) {
 		"//evil.example/admin/",
 		"/admin//evil.example",
 		"/admin/x/../../evil",
+		"/admin/%2e%2e/x",  // the dot segment is spelled out in escapes; a browser still climbs out of /admin/
+		"/\t/evil.example", // a browser drops the tab, so this is //evil.example
 		"/events",
 		"/admin/x\r\nSet-Cookie: a=b",
 		"javascript:alert(1)",
@@ -311,6 +313,37 @@ func TestAdminAuth_NextCannotLeaveTheSite(t *testing.T) {
 		if got := res.Header.Get("Location"); got != adminHome {
 			t.Errorf("next %q sent the browser to %q, want /admin/", next, got)
 		}
+	}
+}
+
+// The sign-in POST keeps a legitimate resume target exactly as the admin auth
+// middleware builds it (the escaped path plus the raw query), including what
+// the old local check refused: a fragment, a trailing slash and "/admin/" itself.
+func TestAdminAuth_NextKeepsALegitimateTarget(t *testing.T) {
+	for _, next := range []string{
+		"/admin/events?status=open&page=2",
+		"/admin/users?q=a%20b",
+		"/admin/",
+		"/admin/events/",
+		"/admin/events#top",
+	} {
+		s := newApp(t)
+		res, body := post(t, s.srv, "/admin/login", url.Values{
+			"email":    {testEmail},
+			"password": {testPassword},
+			"next":     {next},
+		})
+		if res.StatusCode != http.StatusSeeOther {
+			t.Fatalf("next %q: sign in = %d %s", next, res.StatusCode, body)
+		}
+		if got := res.Header.Get("Location"); got != next {
+			t.Errorf("next %q: Location = %q", next, got)
+		}
+	}
+	// Non-ASCII is accepted too; http.Redirect percent-encodes it in the
+	// Location header, so it is checked on safeNext rather than on the response.
+	if got := safeNext("/admin/events?q=café"); got != "/admin/events?q=café" {
+		t.Errorf("non-ASCII next refused: %q", got)
 	}
 }
 

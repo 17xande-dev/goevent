@@ -3,13 +3,12 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"net/url"
-	"path"
 	"strings"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/validate"
+	"github.com/17xande-dev/websec"
 )
 
 // adminHome is where signing in lands when nothing asked to go elsewhere, for
@@ -303,36 +302,26 @@ func (h *Handler) currentSession(r *http.Request) (auth.User, bool) {
 	return user, true
 }
 
+// nextOpts is the policy for the "where was I going" parameter. The rules
+// against a hostile value (control characters, backslashes, dot segments, an
+// inner "//") are websec.SafeRedirect's own; these two are this app's.
+var nextOpts = websec.RedirectOptions{
+	// Prefix is an allowlist rather than a blocklist: only a path under /admin/
+	// is a sensible place to land after an admin sign-in, and requiring it rules
+	// out a public event page, an absolute URL and a protocol-relative
+	// //evil.example without having thought of each. The check is on the raw
+	// path, so "/admin/%2e%2e/x" cannot satisfy it and then leave.
+	Prefix: "/admin/",
+	// Fallback "" is what every caller reads as the default landing page.
+	Fallback: "",
+}
+
 // safeNext reduces a "where was I going" parameter to something safe to redirect
-// to, or to "" — which every caller reads as the default landing page.
-//
-// An allowlist rather than a blocklist: it must be a path under /admin/, which
-// rules out an absolute URL, a protocol-relative //evil.example (a host, not a
-// path, to a browser), and a header-splitting CR or LF, without needing to have
-// thought of each of them. A redirect the site hands out is a redirect somebody
-// will use to make a phishing link look like it came from here.
+// to, or to "" — which every caller reads as the default landing page. A
+// redirect the site hands out is a redirect somebody will use to make a
+// phishing link look like it came from here.
 func safeNext(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/admin/") || strings.HasPrefix(next, "/admin//") {
-		return ""
-	}
-	if strings.ContainsAny(next, "\r\n\\") {
-		return ""
-	}
-	// Parseable, and still relative once parsed.
-	u, err := url.Parse(next)
-	if err != nil || u.Scheme != "" || u.Host != "" || u.Opaque != "" {
-		return ""
-	}
-	// And it must be the path it appears to be: "/admin/x/../../evil" starts
-	// "/admin/" as far as HasPrefix is concerned, and a browser resolves it
-	// somewhere else entirely before asking for it.
-	if path.Clean(u.Path) != u.Path {
-		return ""
-	}
-	if u.EscapedPath() != next && u.RequestURI() != next {
-		return ""
-	}
-	return next
+	return websec.SafeRedirect(next, nextOpts)
 }
 
 // sessionCookie builds the admin cookie, or its removal when value is empty.
