@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/outbox"
@@ -293,17 +294,29 @@ func (h *Handler) adminEventExport(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-// cells escapes every cell a spreadsheet would read as a formula. Excel and
+// csvCell defuses a cell a spreadsheet would read as a formula. Excel and
 // Sheets evaluate a cell beginning =, +, - or @ — so a name typed into a public
 // form becomes a live formula on a staff machine, and a +27… phone number is
 // the everyday case that trips it. A leading apostrophe makes it text.
+//
+// Leading control, format (BOM, zero-width space) and space characters are
+// stripped before the check, because spreadsheet importers can discard them
+// before they detect a formula, so " =1" would still run. Anything stripped
+// is dropped and the cell gains the apostrophe whatever follows.
+func csvCell(s string) string {
+	clean := strings.TrimLeftFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) })
+	prefix := len(clean) != len(s)
+	if prefix || (len(clean) > 0 && strings.ContainsRune("=+-@", rune(clean[0]))) {
+		return "'" + clean
+	}
+	return s
+}
+
+// cells applies csvCell to every cell of a record, on a copy.
 func cells(rec []string) []string {
 	out := make([]string, len(rec))
 	for i, c := range rec {
-		if c != "" && strings.ContainsRune("=+-@\t\r", rune(c[0])) {
-			c = "'" + c
-		}
-		out[i] = c
+		out[i] = csvCell(c)
 	}
 	return out
 }

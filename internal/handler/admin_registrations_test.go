@@ -192,11 +192,22 @@ func TestAdminEventExport_EscapesFormulasAndHasEveryQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Labels become the header row, which is escaped like any other. These two
+	// are the spellings a plain first-byte check misses: a leading space, and a
+	// BOM that spreadsheet importers discard before they look for a formula.
+	for _, label := range []string{" =1", "\ufeff=HYPERLINK(1)"} {
+		if _, err := s.events.CreateQuestion(t.Context(), events.Question{EventID: e.ID, Scope: events.ScopeAttendee,
+			Kind: events.KindText, Label: label}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	form := registerForm(t, s, e, map[string]int{adult.ID: 1})
 	form.Set("method", string(registrations.MethodLater))
 	form.Set("a0.first", "=HYPERLINK(\"http://evil.example\")")
 	form.Set("a0.q."+q.ID, "@SUM(1)")
 	form.Set("contact_phone", "+27 82 555 0101")
+	// The form trims spaces but not a BOM, so this one reaches the stored row.
+	form.Set("a0.last", "\ufeff=HYPERLINK(1)")
 	if res, body := submit(t, s, e, form); res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("register = %d %s", res.StatusCode, excerpt(body))
 	}
@@ -213,13 +224,34 @@ func TestAdminEventExport_EscapesFormulasAndHasEveryQuestion(t *testing.T) {
 	if err != nil || len(recs) != 2 {
 		t.Fatalf("csv = %d records, %v:\n%s", len(recs), err, body)
 	}
-	if recs[0][len(recs[0])-1] != "Diet" {
+	header := strings.Join(recs[0], "|")
+	if !strings.Contains(header, "|Diet|") {
 		t.Errorf("header = %v, want a column for the question", recs[0])
 	}
+	for _, want := range []string{"|'=1|", "|'=HYPERLINK(1)"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("header is missing escaped %q: %s", want, header)
+		}
+	}
 	row := strings.Join(recs[1], "|")
-	for _, want := range []string{`'=HYPERLINK`, `'@SUM(1)`, `'+27 82 555 0101`} {
+	for _, want := range []string{`'=HYPERLINK`, `'@SUM(1)`, `'+27 82 555 0101`, "|'=HYPERLINK(1)|"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row is missing escaped %q: %s", want, row)
+		}
+	}
+}
+
+// The unit table for the escaper itself: the invisible-prefix spellings a
+// first-byte check misses, and the ordinary text that must pass untouched.
+func TestCSVCell(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"=1+1", "'=1+1"}, {"+27821234567", "'+27821234567"}, {"-5", "'-5"}, {"@cmd", "'@cmd"},
+		{"\t=1", "'=1"}, {"\r=1", "'=1"}, {"\ufeff=1", "'=1"}, {"\x00\u200b+27", "'+27"}, {" =1", "'=1"},
+		{"\tplain", "'plain"}, {"\ufeffplain", "'plain"},
+		{`"quotes"`, `"quotes"`}, {"a,b", "a,b"}, {"a\nb", "a\nb"}, {"你好", "你好"}, {"", ""}, {"ordinary", "ordinary"},
+	} {
+		if got := csvCell(c.in); got != c.want {
+			t.Errorf("csvCell(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
