@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -94,9 +95,45 @@ func TestEventImageBodyLimit(t *testing.T) {
 	if res.StatusCode != http.StatusSeeOther {
 		t.Fatalf("upload at limit: status %d; want 303", res.StatusCode)
 	}
-	res, _ = uploadImage(t, s, e.ID, append(atLimit, make([]byte, 1<<20)...))
-	if res.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("upload over limit: status %d; want 413", res.StatusCode)
+	path := s.srv.URL + "/admin/events/" + e.ID + "/image"
+	token := csrfToken(t, s.srv)
+	for _, tc := range []struct {
+		name   string
+		signed bool
+		stream bool
+		origin string
+		status int
+		msg    string
+	}{
+		{"staff", true, false, s.srv.URL, http.StatusUnprocessableEntity, "That image is larger than 5 MiB."},
+		{"anonymous", false, false, s.srv.URL, http.StatusRequestEntityTooLarge, "Request body too large."},
+		{"anonymous streamed", false, true, s.srv.URL, http.StatusUnauthorized, "Sign in required."},
+		{"cross origin", true, false, "https://elsewhere.example", http.StatusForbidden, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, contentType := oversizedMultipart(t, "image", token)
+			body := &bodyProbe{Reader: data}
+			r := httptest.NewRequest(http.MethodPost, path, body)
+			r.ContentLength = -1
+			if !tc.stream {
+				r.ContentLength = int64(data.Len())
+			}
+			r.Header.Set("Content-Type", contentType)
+			r.Header.Set("Origin", tc.origin)
+			if tc.signed {
+				for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+					r.AddCookie(c)
+				}
+			}
+			w := httptest.NewRecorder()
+			s.srv.Config.Handler.ServeHTTP(w, r)
+			if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.msg) || body.calls != 0 {
+				t.Fatalf("oversized upload: status %d, reads %d, body %q; want %d and %q", w.Code, body.calls, excerpt(w.Body.String()), tc.status, tc.msg)
+			}
+			if tc.status == http.StatusUnprocessableEntity && (!strings.Contains(w.Body.String(), "Camp") || !csrfFieldRE.MatchString(w.Body.String())) {
+				t.Fatal("oversize response did not render the editable event page")
+			}
+		})
 	}
 	got, err := s.events.Get(t.Context(), e.ID)
 	if err != nil {
@@ -106,4 +143,24 @@ func TestEventImageBodyLimit(t *testing.T) {
 	if !ok || !bytes.Equal(obj.Body, atLimit) || len(s.images.Keys()) != 1 {
 		t.Fatal("refused request changed the stored image")
 	}
+}
+
+func oversizedMultipart(t *testing.T, field, token string) (*bytes.Buffer, string) {
+	t.Helper()
+	var data bytes.Buffer
+	m := multipart.NewWriter(&data)
+	if err := m.WriteField("csrf_token", token); err != nil {
+		t.Fatal(err)
+	}
+	part, err := m.CreateFormFile(field, "large.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(make([]byte, 6<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &data, m.FormDataContentType()
 }

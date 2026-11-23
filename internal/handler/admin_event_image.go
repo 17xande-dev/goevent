@@ -31,15 +31,15 @@ func (h *Handler) adminEventImageUpload(w http.ResponseWriter, r *http.Request) 
 		h.renderEvent(w, r, http.StatusUnprocessableEntity, e, eventValues(e), nil, msg)
 	}
 
-	// A body bigger than the cap is cut off here, while it is still arriving,
-	// rather than after it has all been buffered.
-	r.Body = http.MaxBytesReader(w, r.Body, blob.MaxUploadBytes+1024)
-	if err := r.ParseMultipartForm(blob.MaxUploadBytes); err != nil {
-		problem("That file is too large, or the upload was interrupted. The limit is " +
-			humanBytes(blob.MaxUploadBytes) + ".")
+	tooLarge := func() {
+		problem("That image is larger than " + humanBytes(blob.MaxUploadBytes) + ".")
+	}
+	// This branch also serves the rejected request whose body was discarded
+	// before CSRF. It must return before touching the form or storage.
+	if uploadTooLarge(r) {
+		tooLarge()
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
 
 	file, header, err := r.FormFile("image")
 	if err != nil {
@@ -61,7 +61,7 @@ func (h *Handler) adminEventImageUpload(w http.ResponseWriter, r *http.Request) 
 		problem("That file is empty.")
 		return
 	case int64(len(body)) > blob.MaxUploadBytes:
-		problem("That image is larger than " + humanBytes(blob.MaxUploadBytes) + ".")
+		tooLarge()
 		return
 	}
 	contentType, ext, err := blob.Validate(body)

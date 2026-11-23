@@ -89,7 +89,7 @@ func checkbox(b bool) string {
 func humanBytes(n int64) string {
 	const mib = 1 << 20
 	if n >= mib && n%mib == 0 {
-		return strconv.FormatInt(n/mib, 10) + " MB"
+		return strconv.FormatInt(n/mib, 10) + " MiB"
 	}
 	return strconv.FormatInt(n, 10) + " bytes"
 }
