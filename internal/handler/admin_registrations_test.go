@@ -240,3 +240,64 @@ func TestAdminEventExport_EscapesFormulasAndHasEveryQuestion(t *testing.T) {
 		}
 	}
 }
+
+// The test above fills the columns a public form can reach in one pass, and a
+// substring check on the joined row cannot say which column an escape came
+// from. This one checks each column on its own: an export that escapes every
+// cell except one (a column pulled out of the CSVRow call, say) must fail on
+// that column's name. The hidden-prefix spelling (a leading space, a BOM) is
+// used because it is the one a first-byte check misses.
+//
+// Email and the registered-by name are written straight to the rows, not
+// through the form, because the form's own validation would refuse some of
+// them, and the export must not depend on that. The price column is formatted
+// from integer cents under a CHECK >= 0, so no stored value can begin with
+// anything but a digit; it has no hostile source to test.
+func TestAdminEventExport_EscapesEachColumnOnItsOwn(t *testing.T) {
+	s := newApp(t)
+	e, adult, _ := published(t, s, 10, func(e *events.Event) {
+		e.PayLater, e.PayLaterInstructions = true, "EFT"
+	})
+	form := registerForm(t, s, e, map[string]int{adult.ID: 1})
+	form.Set("method", string(registrations.MethodLater))
+	if res, body := submit(t, s, e, form); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("register = %d %s", res.StatusCode, excerpt(body))
+	}
+	if _, err := s.pool.Exec(t.Context(), `UPDATE attendees SET email = ' =cmd|email'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(t.Context(),
+		"UPDATE registrations SET contact_first_name = E'\\ufeff=cmd|by', contact_last_name = ''"); err != nil {
+		t.Fatal(err)
+	}
+	signIn(t, s.srv)
+
+	res, body := get(t, s.srv, "/admin/events/"+e.ID+"/attendees.csv")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("export = %d", res.StatusCode)
+	}
+	recs, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	if err != nil || len(recs) != 2 {
+		t.Fatalf("csv = %d records, %v:\n%s", len(recs), err, body)
+	}
+	col := func(name string) string {
+		t.Helper()
+		for i, h := range recs[0] {
+			if h == name {
+				return recs[1][i]
+			}
+		}
+		t.Fatalf("no %q column in %v", name, recs[0])
+		return ""
+	}
+	// Each cell leads with an apostrophe, so the spreadsheet shows text rather
+	// than evaluating it (websec drops the hidden prefix while escaping).
+	for name, want := range map[string]string{
+		"Email":         "'=cmd|email",
+		"Registered by": "'=cmd|by",
+	} {
+		if got := col(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+}

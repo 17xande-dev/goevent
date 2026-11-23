@@ -286,6 +286,8 @@ func TestAdminAuth_NextCannotLeaveTheSite(t *testing.T) {
 		"https://evil.example/admin/",
 		"//evil.example/admin/",
 		"/admin//evil.example",
+		"/administrator/", // shares the "/admin" text but is not under /admin/: pins the trailing slash on Prefix
+		"/administrator",
 		"/admin/x/../../evil",
 		"/admin/%2e%2e/x",  // the dot segment is spelled out in escapes; a browser still climbs out of /admin/
 		"/\t/evil.example", // a browser drops the tab, so this is //evil.example
