@@ -53,6 +53,41 @@ func TestLoginUpgradeDoesNotOverwriteConcurrentPasswordChange(t *testing.T) {
 	}
 }
 
+func TestLoginUpgradeDoesNotOverwriteHashAfterConcurrentDisable(t *testing.T) {
+	s, pool, ctx := newStore(t)
+	defer password.SetParamsForTesting(password.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32})()
+	u, err := s.Create(ctx, "disabled@example.com", "", legacyHash, RoleAdmin, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Change only the disabled state, so the old-hash predicate still matches.
+	// The tracer runs the change just before the real compare-and-swap.
+	attempted := false
+	cfg := pool.Config()
+	cfg.ConnConfig.Tracer = beforePasswordUpgrade(func(ctx context.Context) {
+		if err := s.SetDisabled(ctx, u.ID, true); err != nil {
+			t.Fatalf("concurrent disable: %v", err)
+		}
+		attempted = true
+	})
+	loginPool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loginPool.Close()
+	if _, err := NewStore(loginPool).Authenticate(ctx, u.Email, legacyPassword); err != nil || !attempted {
+		t.Fatalf("upgrade attempted=%t, authentication error=%v", attempted, err)
+	}
+	stored, err := s.Get(ctx, u.ID)
+	if err != nil || !stored.Disabled {
+		t.Fatalf("concurrent disable did not persist: disabled=%t, err=%v", stored.Disabled, err)
+	}
+	if stored.PasswordHash != legacyHash {
+		t.Error("password hash was overwritten after the account was disabled")
+	}
+}
+
 func TestLoginSucceedsIfHashUpgradeWriteFails(t *testing.T) {
 	s, pool, ctx := newStore(t)
 	defer password.SetParamsForTesting(password.Params{Memory: 64, Time: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32})()
