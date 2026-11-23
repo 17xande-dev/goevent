@@ -95,7 +95,15 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 	email := validate.NormalizeEmail(r.PostFormValue("email"))
 	next := safeNext(r.PostFormValue("next"))
 
-	user, err := h.users.Authenticate(r.Context(), email, r.PostFormValue("password"))
+	// Check first so an exhausted address requires no password work.
+	emailKey := loginEmailKey(email)
+	if h.limits.loginByEmail.Exhausted(emailKey) {
+		w.Header().Set("Retry-After", "60")
+		h.rateLimited(w, r)
+		return
+	}
+
+	user, err := h.authenticateLogin(r.Context(), email, r.PostFormValue("password"))
 	if err != nil {
 		if !errors.Is(err, auth.ErrBadCredentials) {
 			h.serverError(w, r, err)
@@ -105,6 +113,7 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 		// disabled account. Which one it was is exactly what an attacker
 		// enumerating addresses wants told, and the store already spends the same
 		// argon2 work on all three so the timing does not say either.
+		h.limits.loginByEmail.Allow(emailKey)
 		h.logger(r).Warn("failed admin login", "email", email)
 		h.render(w, r, http.StatusUnauthorized, "admin_login", loginPage{
 			page:  h.newPage(r, "Sign in"),

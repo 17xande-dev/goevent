@@ -45,12 +45,14 @@ func TestHardening_LoginIsRateLimited(t *testing.T) {
 	}
 }
 
-func TestHardening_UnlimitedByDefaultInTests(t *testing.T) {
-	// The rest of the suite depends on this: a zero limit means the surface is
-	// unlimited, so no existing test is quietly throttled into failing.
+func TestHardening_PerIPLimitDisabledByDefaultInTests(t *testing.T) {
+	// Use distinct addresses to isolate the configurable per-IP tier from the
+	// always-on per-address tier.
 	s := newApp(t)
 	for i := range 12 {
-		res, _ := post(t, s.srv, "/admin/login", url.Values{"password": {"wrong"}})
+		res, _ := post(t, s.srv, "/admin/login", url.Values{
+			"email": {"user" + strconv.Itoa(i) + "@example.com"}, "password": {"wrong"},
+		})
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("attempt %d = %d with limits unset, want 401", i, res.StatusCode)
 		}

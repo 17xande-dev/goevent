@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/payment"
+	"github.com/17xande-dev/ratelimit"
 	"github.com/17xande-dev/ratelimit/clientip"
 	"github.com/justinas/nosurf"
 )
@@ -46,7 +48,8 @@ type Handler struct {
 	// users is the administrator accounts and their sessions. The handler needs it
 	// for the login, sign-out and setup-claim routes; RequireAdmin holds the same
 	// store for the lookup it does on every protected request.
-	users *auth.Store
+	users             *auth.Store
+	authenticateLogin func(context.Context, string, string) (auth.User, error)
 
 	// adminRoutes is every protected route and the permission it names, recorded
 	// by RegisterAdmin as it wires them. Written once at startup, read-only
@@ -64,10 +67,11 @@ type Handler struct {
 // unlimited, which is what the test configuration uses and what an operator gets
 // by setting RATE_LIMIT_*_PER_MINUTE=0.
 type limiters struct {
-	login    middleware.Middleware
-	checkout middleware.Middleware
-	callback middleware.Middleware
-	status   middleware.Middleware
+	login        middleware.Middleware
+	loginByEmail *ratelimit.Limiter
+	checkout     middleware.Middleware
+	callback     middleware.Middleware
+	status       middleware.Middleware
 }
 
 // perMinute builds a limiter allowing n requests a minute, or a pass-through when
@@ -118,6 +122,15 @@ func New(d Deps) *Handler {
 		gateways: d.Gateways, mail: d.Mail,
 		blob: d.Images, users: d.Users, outbox: d.Outbox,
 	}
+	if d.Users != nil {
+		h.authenticateLogin = d.Users.Authenticate
+	}
+	loginByEmail, err := ratelimit.New(ratelimit.Config{
+		Rate: 1.0 / 60, Burst: 5, IdleTTL: 30 * time.Minute,
+	})
+	if err != nil {
+		panic(err) // These bounds are constants, not deployment configuration.
+	}
 	// Storage is optional and must be non-nil, so that a caller omitting it gets
 	// a refusal with a message rather than a nil panic on the first upload.
 	if h.blob == nil {
@@ -125,8 +138,9 @@ func New(d Deps) *Handler {
 	}
 	page := http.HandlerFunc(h.rateLimited)
 	h.limits = limiters{
-		login:    perMinute("admin login", cfg.RateLimits.LoginPerMinute, cfg.ClientIPSource, log, page),
-		checkout: perMinute("checkout", cfg.RateLimits.CheckoutPerMinute, cfg.ClientIPSource, log, page),
+		loginByEmail: loginByEmail,
+		login:        perMinute("admin login", cfg.RateLimits.LoginPerMinute, cfg.ClientIPSource, log, page),
+		checkout:     perMinute("checkout", cfg.RateLimits.CheckoutPerMinute, cfg.ClientIPSource, log, page),
 		// No page for the gateway: it is a machine, and the plain status with
 		// Retry-After is exactly what it acts on.
 		callback: perMinute("payment callback", cfg.RateLimits.CallbackPerMinute, cfg.ClientIPSource, log, nil),
