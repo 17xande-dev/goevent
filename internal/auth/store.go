@@ -26,6 +26,22 @@ var ErrNotFound = errors.New("auth: not found")
 // discover which addresses have accounts.
 var ErrBadCredentials = errors.New("auth: email or password is not right")
 
+// knownAccountFailure carries only the internal audit ID. Its error text and
+// errors.Is result are the same as for an unknown account.
+type knownAccountFailure struct{ userID string }
+
+func (knownAccountFailure) Error() string { return ErrBadCredentials.Error() }
+func (knownAccountFailure) Unwrap() error { return ErrBadCredentials }
+
+// BadCredentialsUserID is for audit logs, never for the response to a sign-in.
+func BadCredentialsUserID(err error) string {
+	var failure knownAccountFailure
+	if errors.As(err, &failure) {
+		return failure.userID
+	}
+	return ""
+}
+
 // ErrEmailTaken means an account already exists for that address, case
 // insensitively. It exists so a handler can render the message on the email
 // field rather than answering 500 or matching on driver text.
@@ -62,7 +78,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Authenticate verifies an address and password, returning the account.
 //
-// Every failure is ErrBadCredentials. The order of the checks is load-bearing:
+// Every credential failure matches ErrBadCredentials. The order of the checks is load-bearing:
 // `disabled` is examined *after* the password, because refusing a disabled
 // account before verifying would answer faster for a wrong password than a right
 // one, making the account's state an oracle for the password being correct.
@@ -80,10 +96,10 @@ func (s *Store) Authenticate(ctx context.Context, email, pw string) (User, error
 
 	ok, rehash, err := password.Check(ctx, row.PasswordHash, pw)
 	if err != nil || !ok {
-		return User{}, ErrBadCredentials
+		return User{}, knownAccountFailure{userID: userOf(row).ID}
 	}
 	if row.Disabled {
-		return User{}, ErrBadCredentials
+		return User{}, knownAccountFailure{userID: userOf(row).ID}
 	}
 
 	u := userOf(row)

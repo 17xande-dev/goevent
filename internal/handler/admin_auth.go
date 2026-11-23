@@ -114,7 +114,13 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 		// enumerating addresses wants told, and the store already spends the same
 		// argon2 work on all three so the timing does not say either.
 		h.limits.loginByEmail.Allow(emailKey)
-		h.logger(r).Warn("failed admin login", "email", email)
+		// Submitted values may contain secrets. Only log the stored ID, if known.
+		ip := h.cfg.ClientIPSource.Addr(r).String()
+		if id := auth.BadCredentialsUserID(err); id != "" {
+			h.logger(r).Warn("failed admin login", "user_id", id, "client_ip", ip)
+		} else {
+			h.logger(r).Warn("failed admin login", "reason", "unknown account", "client_ip", ip)
+		}
 		h.render(w, r, http.StatusUnauthorized, "admin_login", loginPage{
 			page:  h.newPage(r, "Sign in"),
 			Email: r.PostFormValue("email"),
