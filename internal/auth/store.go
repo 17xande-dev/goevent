@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -77,7 +78,8 @@ func (s *Store) Authenticate(ctx context.Context, email, pw string) (User, error
 		return User{}, translate(fmt.Errorf("auth: user by email: %w", err))
 	}
 
-	if ok, _, err := password.Check(ctx, row.PasswordHash, pw); err != nil || !ok {
+	ok, rehash, err := password.Check(ctx, row.PasswordHash, pw)
+	if err != nil || !ok {
 		return User{}, ErrBadCredentials
 	}
 	if row.Disabled {
@@ -85,6 +87,11 @@ func (s *Store) Authenticate(ctx context.Context, email, pw string) (User, error
 	}
 
 	u := userOf(row)
+	if rehash {
+		if err := s.upgradePasswordHash(ctx, u.ID, row.PasswordHash, pw); err != nil {
+			slog.WarnContext(ctx, "admin password hash upgrade did not land", "user_id", u.ID, "error", err)
+		}
+	}
 	// Bookkeeping, and never a reason to refuse a sign-in that has already
 	// succeeded: the operator is who they said they were whether or not this
 	// UPDATE lands.
@@ -92,6 +99,30 @@ func (s *Store) Authenticate(ctx context.Context, email, pw string) (User, error
 		u.LastLoginAt = time.Now()
 	}
 	return u, nil
+}
+
+// A password change or disable may win while the new hash is being computed.
+// Neither that loss nor a storage failure should undo a verified sign-in.
+func (s *Store) upgradePasswordHash(ctx context.Context, id, oldHash, pw string) error {
+	newHash, err := password.Hash(ctx, pw)
+	if err != nil {
+		return err
+	}
+	n, err := s.q.UpgradeAdminPasswordHash(ctx, gen.UpgradeAdminPasswordHashParams{
+		ID: id, OldHash: oldHash, NewHash: newHash,
+	})
+	if err != nil {
+		// A database error can contain the rejected row, including its hash.
+		var dbErr *pgconn.PgError
+		if errors.As(err, &dbErr) {
+			return fmt.Errorf("password hash update failed (SQLSTATE %s)", dbErr.Code)
+		}
+		return errors.New("password hash update failed")
+	}
+	if n == 0 {
+		return errors.New("account changed during password hash upgrade")
+	}
+	return nil
 }
 
 // CheckPasswordFor verifies a password against one account without recording a

@@ -446,3 +446,23 @@ func (q *Queries) TouchAdminUserLogin(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, touchAdminUserLogin, id)
 	return err
 }
+
+const upgradeAdminPasswordHash = `-- name: UpgradeAdminPasswordHash :execrows
+UPDATE admin_users
+SET password_hash = $1
+WHERE id = $2 AND password_hash = $3 AND NOT disabled
+`
+
+type UpgradeAdminPasswordHashParams struct {
+	NewHash string
+	ID      string
+	OldHash string
+}
+
+func (q *Queries) UpgradeAdminPasswordHash(ctx context.Context, arg UpgradeAdminPasswordHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upgradeAdminPasswordHash, arg.NewHash, arg.ID, arg.OldHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

@@ -276,8 +276,8 @@ func TestAdmin_LoginAcceptsPreMigrationHash(t *testing.T) {
 			if err := s.pool.QueryRow(t.Context(), `SELECT password_hash FROM admin_users WHERE id = $1`, u.ID).Scan(&stored); err != nil {
 				t.Fatal(err)
 			}
-			if stored != tc.hash {
-				t.Error("sign-in unexpectedly changed the stored hash")
+			if ok, rehash, err := password.Check(t.Context(), stored, tc.pw); !ok || rehash || err != nil {
+				t.Errorf("stored hash must verify at current parameters: ok=%t, rehash=%t, err=%v", ok, rehash, err)
 			}
 		})
 	}

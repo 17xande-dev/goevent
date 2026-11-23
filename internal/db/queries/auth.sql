@@ -42,6 +42,11 @@ UPDATE admin_users
 SET password_hash = @password_hash, must_change_password = @must_change_password
 WHERE id = @id;
 
+-- name: UpgradeAdminPasswordHash :execrows
+UPDATE admin_users
+SET password_hash = @new_hash
+WHERE id = @id AND password_hash = @old_hash AND NOT disabled;
+
 -- Recorded on a successful sign-in. A failure here never fails the login: the
 -- operator is who they said they were, and bookkeeping is not worth turning that
 -- into a refusal.
