@@ -163,7 +163,7 @@ func (h *Handler) FirstPartyHandler(protect middleware.Middleware) http.Handler 
 
 // withCSRF wraps a handler in nosurf. It is one function so that every
 // CSRF-protected group shares a single configuration and a single token pool.
-func (h *Handler) withCSRF(next http.Handler) http.Handler {
+func (h *Handler) withCSRF(next *http.ServeMux) http.Handler {
 	csrf := nosurf.New(next)
 	csrf.SetBaseCookie(http.Cookie{
 		// Path "/" because the protected routes span /admin and the public
@@ -182,7 +182,7 @@ func (h *Handler) withCSRF(next http.Handler) http.Handler {
 	// the right signal rather than r.TLS: behind a TLS-terminating proxy the
 	// connection is plain HTTP but the browser's origin is https.
 	csrf.SetIsTLSFunc(func(*http.Request) bool { return h.cfg.CookieSecure })
-	return csrf
+	return limitBodies(csrf, next)
 }
 
 // csrfFailed answers a request whose CSRF token was missing or wrong. It is a
@@ -266,7 +266,7 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	admin("POST /admin/events/{id}", auth.PermEventsWrite, h.adminEventUpdate)
 	admin("POST /admin/events/{id}/status", auth.PermEventsWrite, h.adminEventStatus)
 	admin("POST /admin/events/{id}/delete", auth.PermEventsWrite, h.adminEventDelete)
-	admin("POST /admin/events/{id}/image", auth.PermEventsWrite, h.adminEventImageUpload)
+	admin(eventImageUpload, auth.PermEventsWrite, h.adminEventImageUpload)
 	admin("POST /admin/events/{id}/image/delete", auth.PermEventsWrite, h.adminEventImageDelete)
 	admin("GET /admin/events/{id}/tickets/new", auth.PermEventsWrite, h.adminTicketNew)
 	admin("POST /admin/events/{id}/tickets", auth.PermEventsWrite, h.adminTicketCreate)
