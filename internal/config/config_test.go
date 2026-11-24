@@ -1001,10 +1001,12 @@ func TestLoad_SMTPHostNeedsEmailFrom(t *testing.T) {
 // rather than failing every form as cross-origin.
 func TestLoad_RejectsABaseURLThatCannotBeAnOrigin(t *testing.T) {
 	for _, base := range []string{
-		"https://Events.Example.com",     // upper case
-		"https://events.example.com:443", // default port
-		"https://events.example.com/app", // path
-		"events.example.com",             // no scheme
+		"https://Events.Example.com",      // upper case
+		"https://events.example.com:443",  // default port
+		"https://events.example.com:0443", // leading zero
+		"https://events.example.com:0",    // port zero
+		"https://events.example.com/app",  // path
+		"events.example.com",              // no scheme
 	} {
 		t.Run(base, func(t *testing.T) {
 			setRequired(t)

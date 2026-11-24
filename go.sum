@@ -6,8 +6,8 @@ github.com/17xande-dev/payment v0.2.2 h1:jEaQdDCCsGrxtrhsju31z7SihxUeR3xoiIHA6k+
 github.com/17xande-dev/payment v0.2.2/go.mod h1:SIEy3Zo/n1g2eCjdpZHX4cNrrUAYquWtQ6tUtUH1a8Y=
 github.com/17xande-dev/ratelimit v0.2.0 h1:IK2xC0BwoYhZiQMQpUhmgAuRDwO/Apc8zDZ1ljUTMPg=
 github.com/17xande-dev/ratelimit v0.2.0/go.mod h1:VhjyQPstPYd7MWpbM6MxY6cpdrtU8jFAHnKl474VL8M=
-github.com/17xande-dev/websec v0.2.0 h1:aDrG33FeYHtw8bEV9lQ2NxsTVJRmqZN6RwtzAhNBJK8=
-github.com/17xande-dev/websec v0.2.0/go.mod h1:APg7nPEUSFaiwyoeyfHA2j8DZ5+IxwVZWInZp81uxMw=
+github.com/17xande-dev/websec v0.3.0 h1:Aytm+MlhJQ0V/ZR/02z+QgpvxAd/SNKaFc7iZneF2Xw=
+github.com/17xande-dev/websec v0.3.0/go.mod h1:APg7nPEUSFaiwyoeyfHA2j8DZ5+IxwVZWInZp81uxMw=
 github.com/aws/aws-sdk-go-v2 v1.47.3 h1:HRoT/MkNi3bjO5xF4dCzLzvVmkvRGHj3/cLINDnJejk=
 github.com/aws/aws-sdk-go-v2 v1.47.3/go.mod h1:xSl+OSI5ZUw6bSMupWc218zE5Pl+65MCCu3ySWFY99A=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 h1:oiEmPz/YMMeh/JvAE8xSxNCIsvWE6lpFe4ZPlyFykQI=

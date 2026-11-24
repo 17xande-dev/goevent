@@ -7,7 +7,7 @@ require (
 	github.com/17xande-dev/password v0.1.0
 	github.com/17xande-dev/payment v0.2.2
 	github.com/17xande-dev/ratelimit v0.2.0
-	github.com/17xande-dev/websec v0.2.0
+	github.com/17xande-dev/websec v0.3.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.23.14

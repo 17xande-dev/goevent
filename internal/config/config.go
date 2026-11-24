@@ -519,7 +519,7 @@ func Load() (Config, error) {
 	// byte for byte with the Origin a browser sends. A value the browser could
 	// never send (a path, upper case, a default port) would make every form fail
 	// as cross-origin, so it stops startup here, where -check-config reports it.
-	if _, err := csrf.New(csrf.Config{Origin: c.BaseURL, Insecure: !c.CookieSecure}); err != nil {
+	if err := csrf.ValidateOrigin(c.BaseURL, !c.CookieSecure); err != nil {
 		return Config{}, fmt.Errorf("config: BASE_URL %q cannot be the site's origin: %w "+
 			"(want lower-case scheme://host[:port] with no path)", c.BaseURL, err)
 	}
