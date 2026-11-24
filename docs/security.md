@@ -3,7 +3,7 @@
 ## CSRF
 
 Every state-changing request from a browser, in the admin or on the registration form,
-needs a [nosurf](https://github.com/justinas/nosurf) token: a `csrf_token` form field (the
+needs a CSRF token ([websec/csrf](https://github.com/17xande-dev/websec), over nosurf): a `csrf_token` form field (the
 `{{template "csrf" .CSRFToken}}` partial) or an `X-CSRF-Token` header. Without one the
 request gets `403`; an htmx request gets `HX-Refresh: true` as well, since reloading is both
 the explanation and the fix.
@@ -23,9 +23,12 @@ Two traps if you extend it:
   `Referer`). Browsers send one; **`curl` does not**, so manual testing needs
   `-H "Origin: http://localhost:8080"`.
 
-nosurf compares the origin against one built from the `Host` header and a scheme taken from
-**`BASE_URL`**, not the connection: behind a TLS-terminating proxy the connection is plain
-HTTP while the browser's origin is https. A wrong `BASE_URL` breaks every form with `403`.
+The check compares the request's origin with **`BASE_URL`** (which must be a lower-case
+`scheme://host[:port]`), not with the `Host` header or the connection: behind a TLS-terminating
+proxy the connection is plain HTTP while the browser's origin is https. A wrong `BASE_URL`
+breaks every form with `403`; a malformed one stops startup. The CSRF cookie is session-only,
+is `__Host-csrf_token` on https (`csrf_token` on plain HTTP), and the token is renewed at
+sign-in, sign-out and your own password change.
 
 ## Administrators
 
@@ -37,7 +40,8 @@ default password. The first account is claimed at `/admin/setup` with a one-time
 SHA-256 is stored, so a leaked backup hands over no live session. Changing an account's
 password, role or disabled state deletes its sessions in the same transaction. The cookie
 is `HttpOnly`, `SameSite=Lax`, scoped to `Path=/admin`, and `Secure` when `BASE_URL` is
-https. Signing in replaces any session the browser arrived with (no session fixation). A
+https, where it is named `__Secure-admin_session`. A session ends after 2 hours unused, or at
+`SESSION_TTL_HOURS`, whichever comes first. Signing in replaces any session the browser arrived with (no session fixation). A
 `?next=` redirect is accepted only as a clean path under `/admin/`.
 
 ### Roles and permissions

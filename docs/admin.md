@@ -42,7 +42,7 @@ the next start issue a new one (or use `SETUP_TOKEN`).
 ## Sessions
 
 A sign-in inserts a row into `admin_sessions`; the cookie carries 32 random bytes and only
-their SHA-256 is stored. Sessions last `SESSION_TTL_HOURS` (default 24). Changing an
+their SHA-256 is stored. Sessions last at most `SESSION_TTL_HOURS` (default 24) and end after 2 hours unused. Changing an
 account's password, role or disabled state deletes every session it holds in the same
 transaction, so the next request from that browser is signed out. An hourly sweep deletes
 expired rows; expiry itself is enforced in the lookup query.

@@ -68,12 +68,12 @@ it up with the database. See [Security](security.md#manage-links-and-ticket-code
 | `DATABASE_URL` | **yes** | — | Postgres connection string |
 | `SECRET_KEY` | **yes** | — | 64 hex characters; see above |
 | `PORT` | no | `8080` | Listen port |
-| `BASE_URL` | no | `http://localhost:8080` | Public origin, no trailing slash. Builds absolute URLs (emails, gateway return and notify URLs). An `https://` value also turns on `Secure` cookies and HSTS, tells the CSRF check the browser's origin is https, and hides error detail |
+| `BASE_URL` | no | `http://localhost:8080` | Public origin: lower-case `scheme://host[:port]`, no path, no trailing slash (a malformed value stops startup and `-check-config`). It is also the origin the CSRF check trusts. Builds absolute URLs (emails, gateway return and notify URLs). An `https://` value also turns on `Secure` cookies and HSTS, tells the CSRF check the browser's origin is https, and hides error detail |
 | `SITE_NAME` | no | `goevent` | The organisation's name, in the header, page titles and emails |
 | `CURRENCY` | no | `ZAR` | Currency code. Both gateways settle in `ZAR` only, and the server refuses to start with a gateway configured and any other value |
 | `NOTIFY_EMAIL` | no | — | Where the organiser's copy of each confirmed registration goes. Empty sends only the registrant's mail |
 | `SETUP_TOKEN` | no | generated | The one-time token that claims the first administrator. At least 32 characters (`openssl rand -base64 32`). Generated and logged on first boot if unset |
-| `SESSION_TTL_HOURS` | no | `24` | How long an admin sign-in lasts. Positive integer |
+| `SESSION_TTL_HOURS` | no | `24` | The absolute limit on an admin sign-in; a session unused for 2 hours also ends. Positive integer |
 | `SHUTDOWN_TIMEOUT_SECONDS` | no | `15` | Grace period for in-flight requests on shutdown |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error` |
 | `LOG_FORMAT` | no | `json` | `gcp` renames `level`/`msg` to `severity`/`message` for Google Cloud Logging. See [Logging](operations.md#logging) |
