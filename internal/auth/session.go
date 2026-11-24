@@ -27,12 +27,28 @@ import (
 
 	"github.com/17xande-dev/goevent/internal/db/gen"
 	"github.com/17xande-dev/websec/cookie"
+	websession "github.com/17xande-dev/websec/session"
 	"github.com/jackc/pgx/v5"
 )
 
 // CookieName is the admin session cookie's bare name; the name on the wire gets
 // a prefix from websec/cookie (__Secure- here, because of the /admin path).
 const CookieName = "admin_session"
+
+// IdleTimeout is how long a session may go unused before it ends, whatever the
+// absolute limit (SESSION_TTL_HOURS, 24 hours by default) still allows. Fixed
+// rather than configurable: the absolute limit is the knob an operator already
+// has, and one more would only be a second way to get a session length wrong.
+const IdleTimeout = 2 * time.Hour
+
+// lifetime is the policy for a session row: the idle limit above and the
+// absolute limit the row itself recorded when it was issued (expires_at less
+// created_at). Reading the absolute limit from the row rather than from
+// configuration is what keeps a session issued under an older SESSION_TTL_HOURS
+// on the limit it was given.
+func lifetime(created, expires time.Time) websession.Lifetime {
+	return websession.Lifetime{Idle: IdleTimeout, Absolute: expires.Sub(created)}
+}
 
 // NewSessionCookie builds the admin session cookie policy. Path is /admin, so
 // the cookie is never sent with a request for the public event pages. insecure
@@ -84,7 +100,8 @@ func (s *Store) IssueSession(ctx context.Context, userID string, ttl time.Durati
 	if err != nil {
 		return "", Session{}, translate(fmt.Errorf("auth: create session: %w", err))
 	}
-	return token, Session{UserID: userID, CreatedAt: time.Now(), ExpiresAt: expires}, nil
+	now := time.Now()
+	return token, Session{UserID: userID, CreatedAt: now, LastSeen: now, ExpiresAt: expires}, nil
 }
 
 // Session looks a token up, returning the session and the account it belongs to.
@@ -94,9 +111,15 @@ func (s *Store) IssueSession(ctx context.Context, userID string, ttl time.Durati
 // is equally not signed in and telling them apart would only invite a caller to
 // treat one of them as nearly authenticated.
 //
-// Expiry is enforced in the query's own predicate rather than by comparing
-// ExpiresAt here, so a caller cannot forget to; the periodic sweep that deletes
-// expired rows is housekeeping and explicitly not what makes this correct.
+// The absolute limit is enforced in the query's own predicate rather than by
+// comparing ExpiresAt here, so a caller cannot forget to; the idle limit is
+// applied here, by websec/session, from the row's last_seen. The periodic sweep
+// that deletes expired rows is housekeeping and explicitly not what makes this
+// correct.
+//
+// A lookup also records that the session was used, at most once a minute (see
+// TouchAdminSession), which is why a stored last_seen may be up to a minute
+// stale: an idle session can end up to a minute early, never late.
 func (s *Store) Session(ctx context.Context, token string) (Session, User, error) {
 	// A short-circuit, not an optimisation: without it an empty cookie would
 	// hash to a perfectly well-formed lookup for sha256(""), which is a value an
@@ -115,7 +138,24 @@ func (s *Store) Session(ctx context.Context, token string) (Session, User, error
 	sess := Session{
 		UserID:    row.AdminSession.UserID,
 		CreatedAt: row.AdminSession.CreatedAt,
+		LastSeen:  row.AdminSession.LastSeen,
 		ExpiresAt: row.AdminSession.ExpiresAt,
+	}
+	now := time.Now()
+	if lifetime(sess.CreatedAt, sess.ExpiresAt).Expired(sess.CreatedAt, sess.LastSeen, now) {
+		return Session{}, User{}, ErrNotFound
+	}
+	// NeedsTouch also reports a last_seen in the future (a clock that stepped
+	// back), which the statement rewrites to now: it extends a session by at most
+	// one request.
+	if websession.NeedsTouch(sess.LastSeen, now) {
+		err := s.q.TouchAdminSession(ctx, gen.TouchAdminSessionParams{
+			TokenHash:    hashToken(token),
+			EverySeconds: websession.TouchEvery.Seconds(),
+		})
+		if err != nil {
+			return Session{}, User{}, translate(fmt.Errorf("auth: touch session: %w", err))
+		}
 	}
 	return sess, userOf(row.AdminUser), nil
 }

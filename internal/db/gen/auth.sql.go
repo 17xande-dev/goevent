@@ -158,13 +158,16 @@ func (q *Queries) DeleteAdminSessionsForUser(ctx context.Context, userID string)
 }
 
 const deleteExpiredAdminSessions = `-- name: DeleteExpiredAdminSessions :execrows
-DELETE FROM admin_sessions WHERE expires_at < now()
+DELETE FROM admin_sessions
+WHERE expires_at < now()
+   OR last_seen < now() - make_interval(secs => $1::float8)
 `
 
 // Housekeeping only: expiry is enforced on read, so this exists to stop the table
-// growing without bound rather than to make anything correct.
-func (q *Queries) DeleteExpiredAdminSessions(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpiredAdminSessions)
+// growing without bound rather than to make anything correct. Idle-expired rows go
+// too, on the same limit the lookup applies.
+func (q *Queries) DeleteExpiredAdminSessions(ctx context.Context, idleSeconds float64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredAdminSessions, idleSeconds)
 	if err != nil {
 		return 0, err
 	}
@@ -172,7 +175,7 @@ func (q *Queries) DeleteExpiredAdminSessions(ctx context.Context) (int64, error)
 }
 
 const getAdminSession = `-- name: GetAdminSession :one
-SELECT s.token_hash, s.user_id, s.created_at, s.expires_at, u.id, u.email, u.name, u.password_hash, u.role, u.disabled, u.must_change_password, u.created_at, u.last_login_at
+SELECT s.token_hash, s.user_id, s.created_at, s.expires_at, s.last_seen, u.id, u.email, u.name, u.password_hash, u.role, u.disabled, u.must_change_password, u.created_at, u.last_login_at
 FROM admin_sessions s
 JOIN admin_users u ON u.id = s.user_id
 WHERE s.token_hash = $1
@@ -201,6 +204,7 @@ func (q *Queries) GetAdminSession(ctx context.Context, tokenHash []byte) (GetAdm
 		&i.AdminSession.UserID,
 		&i.AdminSession.CreatedAt,
 		&i.AdminSession.ExpiresAt,
+		&i.AdminSession.LastSeen,
 		&i.AdminUser.ID,
 		&i.AdminUser.Email,
 		&i.AdminUser.Name,
@@ -433,6 +437,27 @@ func (q *Queries) SetupPending(ctx context.Context) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const touchAdminSession = `-- name: TouchAdminSession :exec
+UPDATE admin_sessions SET last_seen = now()
+WHERE token_hash = $1
+  AND (last_seen <= now() - make_interval(secs => $2::float8)
+       OR last_seen > now())
+`
+
+type TouchAdminSessionParams struct {
+	TokenHash    []byte
+	EverySeconds float64
+}
+
+// The throttled last-seen write (websec/session: NeedsTouch decides in Go whether to
+// ask, and this predicate makes the statement itself idempotent). The second branch
+// also rewrites a last_seen in the FUTURE, as a clock that stepped back would leave:
+// left alone it would extend the session until the clock caught up.
+func (q *Queries) TouchAdminSession(ctx context.Context, arg TouchAdminSessionParams) error {
+	_, err := q.db.Exec(ctx, touchAdminSession, arg.TokenHash, arg.EverySeconds)
+	return err
 }
 
 const touchAdminUserLogin = `-- name: TouchAdminUserLogin :exec

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
@@ -190,5 +191,58 @@ func TestNewRefusesABaseURLThatCannotBeAnOrigin(t *testing.T) {
 	d := testDeps(t, dbtest.Pool(t), cfg, "", blob.NewFake())
 	if _, err := New(d); err == nil || !strings.Contains(err.Error(), "BASE_URL") {
 		t.Fatalf("New with a path in BASE_URL = %v, want an error naming BASE_URL", err)
+	}
+}
+
+// The idle limit is enforced on the real admin route, and a request from a live
+// session records its use (so an active operator is never signed out for being
+// "idle"): both through the cookie a browser would send.
+func TestAdminSessionIdleLimitThroughTheRoutes(t *testing.T) {
+	s := newSecureApp(t)
+	token, _, err := s.users.IssueSession(t.Context(), s.owner.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("IssueSession: %v", err)
+	}
+	cookie := &http.Cookie{Name: secureSessionName, Value: token}
+	// The session is made old enough that last_seen (never before created_at, as far
+	// as the policy is concerned) is what decides, with its 24 h limit kept.
+	setLastSeen := func(ago time.Duration) {
+		t.Helper()
+		if _, err := s.pool.Exec(t.Context(),
+			`UPDATE admin_sessions SET created_at = now() - interval '5 hours',
+			        expires_at = now() + interval '19 hours',
+			        last_seen = now() - make_interval(secs => $1::float8)`, ago.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lastSeenAgo := func() time.Duration {
+		t.Helper()
+		var d float64
+		if err := s.pool.QueryRow(t.Context(),
+			`SELECT extract(epoch FROM now() - last_seen)::float8 FROM admin_sessions`).Scan(&d); err != nil {
+			t.Fatal(err)
+		}
+		return time.Duration(d * float64(time.Second))
+	}
+
+	// Used 10 minutes ago: live, and the request records that it was used.
+	setLastSeen(10 * time.Minute)
+	if w := s.send(t, http.MethodGet, "/admin/events", nil, cookie); w.Code != http.StatusOK {
+		t.Fatalf("session idle for 10 minutes = %d, want 200", w.Code)
+	}
+	if ago := lastSeenAgo(); ago > time.Minute {
+		t.Errorf("last_seen is %s old after a request, want it refreshed", ago)
+	}
+	// Used a moment ago: the request does not write again (throttled to a minute).
+	setLastSeen(10 * time.Second)
+	s.send(t, http.MethodGet, "/admin/events", nil, cookie)
+	if ago := lastSeenAgo(); ago < 9*time.Second {
+		t.Errorf("last_seen was rewritten within the throttle (%s old)", ago)
+	}
+	// Idle for longer than the idle limit, well inside the 24 h absolute one.
+	setLastSeen(auth.IdleTimeout + time.Minute)
+	w := s.send(t, http.MethodGet, "/admin/events", nil, cookie)
+	if w.Code != http.StatusSeeOther || !strings.HasPrefix(w.Header().Get("Location"), "/admin/login") {
+		t.Errorf("session idle past the limit = %d to %q, want a redirect to sign in", w.Code, w.Header().Get("Location"))
 	}
 }

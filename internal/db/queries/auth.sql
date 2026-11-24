@@ -124,6 +124,16 @@ JOIN admin_users u ON u.id = s.user_id
 WHERE s.token_hash = $1
   AND s.expires_at > now();
 
+-- The throttled last-seen write (websec/session: NeedsTouch decides in Go whether to
+-- ask, and this predicate makes the statement itself idempotent). The second branch
+-- also rewrites a last_seen in the FUTURE, as a clock that stepped back would leave:
+-- left alone it would extend the session until the clock caught up.
+-- name: TouchAdminSession :exec
+UPDATE admin_sessions SET last_seen = now()
+WHERE token_hash = $1
+  AND (last_seen <= now() - make_interval(secs => sqlc.arg(every_seconds)::float8)
+       OR last_seen > now());
+
 -- name: DeleteAdminSession :exec
 DELETE FROM admin_sessions WHERE token_hash = $1;
 
@@ -133,9 +143,12 @@ DELETE FROM admin_sessions WHERE token_hash = $1;
 DELETE FROM admin_sessions WHERE user_id = $1;
 
 -- Housekeeping only: expiry is enforced on read, so this exists to stop the table
--- growing without bound rather than to make anything correct.
+-- growing without bound rather than to make anything correct. Idle-expired rows go
+-- too, on the same limit the lookup applies.
 -- name: DeleteExpiredAdminSessions :execrows
-DELETE FROM admin_sessions WHERE expires_at < now();
+DELETE FROM admin_sessions
+WHERE expires_at < now()
+   OR last_seen < now() - make_interval(secs => sqlc.arg(idle_seconds)::float8);
 
 -- name: CreateSetupToken :execrows
 INSERT INTO admin_setup (id, token_hash) VALUES (TRUE, $1)

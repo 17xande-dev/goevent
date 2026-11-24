@@ -13,6 +13,7 @@ type AdminSession struct {
 	UserID    string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	LastSeen  time.Time
 }
 
 type AdminSetup struct {

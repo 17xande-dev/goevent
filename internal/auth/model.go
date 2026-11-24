@@ -174,6 +174,9 @@ func (u User) Display() string {
 type Session struct {
 	UserID    string
 	CreatedAt time.Time
+	// LastSeen is when the session was last used, as recorded (at most a minute
+	// stale); the idle limit counts from it.
+	LastSeen  time.Time
 	ExpiresAt time.Time
 }
 
