@@ -3,9 +3,12 @@ package auth
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestNewToken_IsRandomAndURLSafe(t *testing.T) {
@@ -201,9 +204,9 @@ func TestSetPassword_EndsSessionsIssuedByIssueSession(t *testing.T) {
 
 // The idle limit and the touch throttle are judged at the database's clock (the
 // one that wrote last_seen and that expires_at is compared with), not at Go's
-// time.Now(). Two machines' clocks cannot be made to differ inside one test
-// process, so this pins the other half: the lookup reports the database's own
-// instant, and the session it hands back is judged by it.
+// time.Now(). This pins one half: the lookup reports the database's own
+// instant. TestSessionIdleIsJudgedAtTheDatabaseClock pins the other, with a
+// database whose clock really differs from Go's.
 func TestSessionLookupCarriesTheDatabaseClock(t *testing.T) {
 	s, pool, ctx := newStore(t)
 	u := mustCreate(t, s, ctx, "owner@example.com", "correct horse battery", RoleOwner)
@@ -237,5 +240,71 @@ func TestSessionLookupCarriesTheDatabaseClock(t *testing.T) {
 	}
 	if lastSeen.After(after) {
 		t.Fatalf("a future last_seen %v was not rewritten to the database's now (%v)", lastSeen, after)
+	}
+}
+
+// A database whose now() runs three hours ahead of Go's clock, built without a
+// second machine: Postgres resolves an unqualified now() through search_path
+// when pg_catalog is listed explicitly, so a now() in the test's own schema,
+// listed first, shadows the real one for every statement on this pool.
+//
+// A session last seen 2h30m before the DATABASE's clock is idle (limit 2h) and
+// must be refused. By Go's clock the same last_seen is 30 minutes in the FUTURE,
+// so judging idle at time.Now() lets it through: that is the bug this pins.
+func TestSessionIdleIsJudgedAtTheDatabaseClock(t *testing.T) {
+	_, pool, ctx := newStore(t)
+
+	var schema string
+	if err := pool.QueryRow(ctx, `SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, fmt.Sprintf(
+		`CREATE FUNCTION %s.now() RETURNS timestamptz LANGUAGE sql STABLE AS
+		 $$ SELECT pg_catalog.now() + interval '3 hours' $$`, schema)); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := pool.Config().Copy()
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema + ", pg_catalog, public"
+	skewed, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(skewed.Close)
+	s := NewStore(skewed)
+
+	var skew time.Duration
+	var dbNow time.Time
+	if err := skewed.QueryRow(ctx, `SELECT now()`).Scan(&dbNow); err != nil {
+		t.Fatal(err)
+	}
+	if skew = time.Until(dbNow); skew < 2*time.Hour {
+		t.Fatalf("the test's skewed now() is only %s ahead of Go's clock; the shadowing failed", skew)
+	}
+
+	u := mustCreate(t, s, ctx, "owner@example.com", "correct horse battery", RoleOwner)
+	// A long TTL, so the absolute limit (judged by the skewed clock too) is not
+	// what refuses anything here.
+	idle, _, err := s.IssueSession(ctx, u.ID, 48*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _, err := s.IssueSession(ctx, u.ID, 48*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for token, age := range map[string]string{idle: "2 hours 30 minutes", fresh: "30 minutes"} {
+		if _, err := pool.Exec(ctx,
+			`UPDATE admin_sessions SET last_seen = pg_catalog.now() + interval '3 hours' - $2::interval WHERE token_hash = $1`,
+			hashToken(token), age); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, _, err := s.Session(ctx, idle); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a session idle 2h30m by the database clock is live (err %v); idle was judged at Go's clock", err)
+	}
+	if _, _, err := s.Session(ctx, fresh); err != nil {
+		t.Errorf("a session idle 30m by the database clock was refused: %v", err)
 	}
 }
