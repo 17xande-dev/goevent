@@ -141,7 +141,10 @@ func (s *Store) Session(ctx context.Context, token string) (Session, User, error
 		LastSeen:  row.AdminSession.LastSeen,
 		ExpiresAt: row.AdminSession.ExpiresAt,
 	}
-	now := time.Now()
+	// The database's clock, which wrote last_seen and judged expires_at above: a
+	// Go time.Now() here would make the idle limit end early or late by whatever
+	// the two clocks differ by, and could see a "future" last_seen on every request.
+	now := row.DbNow
 	if lifetime(sess.CreatedAt, sess.ExpiresAt).Expired(sess.CreatedAt, sess.LastSeen, now) {
 		return Session{}, User{}, ErrNotFound
 	}

@@ -117,8 +117,13 @@ VALUES ($1, $2, $3);
 -- rows is housekeeping against unbounded growth and is explicitly not what makes
 -- this correct — between two sweeps the table is full of expired sessions, and a
 -- lookup that returned them would authenticate every one.
+--
+-- db_now is the database's clock for this statement, the same one that wrote
+-- last_seen and that the expiry predicate below uses. The idle rule and the touch
+-- throttle in Go are judged against it, not against the app server's clock, so
+-- the three cannot disagree about "now" when the two machines' clocks differ.
 -- name: GetAdminSession :one
-SELECT sqlc.embed(s), sqlc.embed(u)
+SELECT sqlc.embed(s), sqlc.embed(u), now()::timestamptz AS db_now
 FROM admin_sessions s
 JOIN admin_users u ON u.id = s.user_id
 WHERE s.token_hash = $1

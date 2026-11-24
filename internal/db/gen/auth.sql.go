@@ -175,7 +175,7 @@ func (q *Queries) DeleteExpiredAdminSessions(ctx context.Context, idleSeconds fl
 }
 
 const getAdminSession = `-- name: GetAdminSession :one
-SELECT s.token_hash, s.user_id, s.created_at, s.expires_at, s.last_seen, u.id, u.email, u.name, u.password_hash, u.role, u.disabled, u.must_change_password, u.created_at, u.last_login_at
+SELECT s.token_hash, s.user_id, s.created_at, s.expires_at, s.last_seen, u.id, u.email, u.name, u.password_hash, u.role, u.disabled, u.must_change_password, u.created_at, u.last_login_at, now()::timestamptz AS db_now
 FROM admin_sessions s
 JOIN admin_users u ON u.id = s.user_id
 WHERE s.token_hash = $1
@@ -185,6 +185,7 @@ WHERE s.token_hash = $1
 type GetAdminSessionRow struct {
 	AdminSession AdminSession
 	AdminUser    AdminUser
+	DbNow        time.Time
 }
 
 // Joined to the user because every caller needs both, and because the user's
@@ -196,6 +197,11 @@ type GetAdminSessionRow struct {
 // rows is housekeeping against unbounded growth and is explicitly not what makes
 // this correct — between two sweeps the table is full of expired sessions, and a
 // lookup that returned them would authenticate every one.
+//
+// db_now is the database's clock for this statement, the same one that wrote
+// last_seen and that the expiry predicate below uses. The idle rule and the touch
+// throttle in Go are judged against it, not against the app server's clock, so
+// the three cannot disagree about "now" when the two machines' clocks differ.
 func (q *Queries) GetAdminSession(ctx context.Context, tokenHash []byte) (GetAdminSessionRow, error) {
 	row := q.db.QueryRow(ctx, getAdminSession, tokenHash)
 	var i GetAdminSessionRow
@@ -214,6 +220,7 @@ func (q *Queries) GetAdminSession(ctx context.Context, tokenHash []byte) (GetAdm
 		&i.AdminUser.MustChangePassword,
 		&i.AdminUser.CreatedAt,
 		&i.AdminUser.LastLoginAt,
+		&i.DbNow,
 	)
 	return i, err
 }

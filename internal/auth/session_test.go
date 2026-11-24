@@ -198,3 +198,44 @@ func TestSetPassword_EndsSessionsIssuedByIssueSession(t *testing.T) {
 		t.Errorf("the session survived a password change: %v", err)
 	}
 }
+
+// The idle limit and the touch throttle are judged at the database's clock (the
+// one that wrote last_seen and that expires_at is compared with), not at Go's
+// time.Now(). Two machines' clocks cannot be made to differ inside one test
+// process, so this pins the other half: the lookup reports the database's own
+// instant, and the session it hands back is judged by it.
+func TestSessionLookupCarriesTheDatabaseClock(t *testing.T) {
+	s, pool, ctx := newStore(t)
+	u := mustCreate(t, s, ctx, "owner@example.com", "correct horse battery", RoleOwner)
+	token, _, err := s.IssueSession(ctx, u.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A last_seen 5 minutes ahead of the DATABASE's clock is "in the future" and
+	// is rewritten by the touch to the database's now(), whatever Go's clock says.
+	if _, err := pool.Exec(ctx, `UPDATE admin_sessions SET last_seen = now() + interval '5 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	row, err := s.q.GetAdminSession(ctx, hashToken(token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dbNow time.Time
+	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+		t.Fatal(err)
+	}
+	if d := dbNow.Sub(row.DbNow); d < 0 || d > 5*time.Second {
+		t.Fatalf("db_now %v is not the database's clock (clock_timestamp %v)", row.DbNow, dbNow)
+	}
+	if _, _, err := s.Session(ctx, token); err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	var lastSeen, after time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_seen, now() FROM admin_sessions`).Scan(&lastSeen, &after); err != nil {
+		t.Fatal(err)
+	}
+	if lastSeen.After(after) {
+		t.Fatalf("a future last_seen %v was not rewritten to the database's now (%v)", lastSeen, after)
+	}
+}
