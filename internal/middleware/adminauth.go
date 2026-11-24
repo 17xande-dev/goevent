@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/17xande-dev/goevent/internal/auth"
+	"github.com/17xande-dev/websec/cookie"
 )
 
 // Middleware is the shape every middleware in this package returns, so routes
@@ -59,10 +60,10 @@ func withAdminUser(r *http.Request, u auth.User) *http.Request {
 //     fragment of the current page would produce a broken hybrid.
 //   - Anything else is a redirect to the login form, carrying where they were
 //     going so signing in resumes it.
-func RequireAdmin(users *auth.Store, log *slog.Logger) Middleware {
+func RequireAdmin(users *auth.Store, log *slog.Logger, session *cookie.Cookie) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user, ok, err := sessionUser(users, log, r)
+			user, ok, err := sessionUser(users, log, session, r)
 			if err != nil {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
@@ -88,10 +89,10 @@ func RequireAdmin(users *auth.Store, log *slog.Logger) Middleware {
 // case — it asks who is signed in, and "nobody" is an answer, not a refusal.
 //
 // A store error is still a 500, for RequireAdmin's reason.
-func AttachAdmin(users *auth.Store, log *slog.Logger) Middleware {
+func AttachAdmin(users *auth.Store, log *slog.Logger, session *cookie.Cookie) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user, ok, err := sessionUser(users, log, r)
+			user, ok, err := sessionUser(users, log, session, r)
 			if err != nil {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
@@ -106,12 +107,14 @@ func AttachAdmin(users *auth.Store, log *slog.Logger) Middleware {
 
 // sessionUser is the account behind the request's session cookie, if it has a
 // live one. The error is the store failing, already logged.
-func sessionUser(users *auth.Store, log *slog.Logger, r *http.Request) (auth.User, bool, error) {
-	cookie, err := r.Cookie(auth.CookieName)
-	if err != nil {
+func sessionUser(users *auth.Store, log *slog.Logger, session *cookie.Cookie, r *http.Request) (auth.User, bool, error) {
+	// Only the prefixed name is read: a bare admin_session from before the
+	// cookie was renamed (or planted by a sibling subdomain) is not a session.
+	token, ok := session.Value(r)
+	if !ok {
 		return auth.User{}, false, nil
 	}
-	_, user, err := users.Session(r.Context(), cookie.Value)
+	_, user, err := users.Session(r.Context(), token)
 	switch {
 	case err == nil && !user.Disabled:
 		return user, true, nil

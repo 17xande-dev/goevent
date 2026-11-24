@@ -26,12 +26,21 @@ import (
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/db/gen"
+	"github.com/17xande-dev/websec/cookie"
 	"github.com/jackc/pgx/v5"
 )
 
-// CookieName is the admin session cookie. It is scoped to /admin by the handler
-// that sets it, so it is never sent with a request for the public event pages.
+// CookieName is the admin session cookie's bare name; the name on the wire gets
+// a prefix from websec/cookie (__Secure- here, because of the /admin path).
 const CookieName = "admin_session"
+
+// NewSessionCookie builds the admin session cookie policy. Path is /admin, so
+// the cookie is never sent with a request for the public event pages. insecure
+// is true only for a plain-HTTP deployment (BASE_URL not https), where a prefix
+// and Secure would make the browser drop the cookie.
+func NewSessionCookie(insecure bool) (*cookie.Cookie, error) {
+	return cookie.New(cookie.Config{Name: CookieName, Path: "/admin", Insecure: insecure})
+}
 
 // TokenBytes is how much randomness a session token carries. 32 bytes is the
 // size below which nothing is gained by arguing about it and above which nothing

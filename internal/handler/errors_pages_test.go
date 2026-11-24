@@ -256,13 +256,16 @@ func brokenApp(t *testing.T, cfg config.Config) *httptest.Server {
 	t.Helper()
 
 	pool := dbtest.Pool(t)
+	srv := httptest.NewUnstartedServer(nil)
+	ownOrigin(&cfg, srv)
 	d := testDeps(t, pool, cfg, "", blob.NewFake())
-	h := New(d)
+	h := mustNew(t, d)
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)
-	mux.Handle("/admin/", h.FirstPartyHandler(middleware.RequireAdmin(d.Users, d.Log)))
-	srv := httptest.NewServer(middleware.Chain(mux, middleware.RequestID))
+	mux.Handle("/admin/", h.FirstPartyHandler(h.RequireAdmin()))
+	srv.Config.Handler = middleware.Chain(mux, middleware.RequestID)
+	srv.Start()
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)
 

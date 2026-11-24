@@ -164,3 +164,27 @@ func oversizedMultipart(t *testing.T, field, token string) (*bytes.Buffer, strin
 	}
 	return &data, m.FormDataContentType()
 }
+
+// A script that sends a valid X-CSRF-Token with an oversized upload gets the bare
+// 403, not the friendly page: the page is for browser forms, whose token travels
+// in the discarded body, and a valid token must never deliver a discarded body to
+// the route. (Before the kit, this request got the 422 page.)
+func TestEventImageOversizedWithHeaderTokenIsRefused(t *testing.T) {
+	s := setupApp(t)
+	e := createEvent(t, s, "Camp")
+	data, contentType := oversizedMultipart(t, "image", "")
+	body := &bodyProbe{Reader: data}
+	r := httptest.NewRequest(http.MethodPost, s.srv.URL+"/admin/events/"+e.ID+"/image", body)
+	r.ContentLength = int64(data.Len())
+	r.Header.Set("Content-Type", contentType)
+	r.Header.Set("Origin", s.srv.URL)
+	r.Header.Set("X-CSRF-Token", csrfToken(t, s.srv))
+	for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+		r.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	s.srv.Config.Handler.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden || body.calls != 0 || strings.Contains(w.Body.String(), "larger than") {
+		t.Fatalf("oversized upload with a header token: status %d, reads %d, body %q; want a bare 403 and no reads", w.Code, body.calls, excerpt(w.Body.String()))
+	}
+}

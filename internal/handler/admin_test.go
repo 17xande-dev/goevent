@@ -19,7 +19,6 @@ import (
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/middleware"
 	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
@@ -144,6 +143,10 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	}
 
 	pool := dbtest.Pool(t)
+	// The CSRF origin must be known before the handler is built, so the listener
+	// is opened first and the server started once the handler exists.
+	srv := httptest.NewUnstartedServer(nil)
+	ownOrigin(&cfg, srv)
 
 	// One storage fake, shared: the templates resolve an event's image key through
 	// the same backend the upload handler wrote to, exactly as in production.
@@ -163,7 +166,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	}
 	regs := registrations.NewStore(pool)
 	signer := registrations.NewSigner([]byte("test secret"))
-	h := New(Deps{
+	h := mustNew(t, Deps{
 		Config:        cfg,
 		Log:           log,
 		Tmpl:          tmpl,
@@ -182,11 +185,12 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	// CSRF group, the registration form inside it.
 	h.RegisterPublic(mux)
 	h.RegisterPayments(mux)
-	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(users, log))
+	firstParty := h.FirstPartyHandler(h.RequireAdmin())
 	mux.Handle("/admin/", firstParty)
 	mux.Handle(RegisterPath, firstParty)
 
-	srv := httptest.NewServer(mux)
+	srv.Config.Handler = mux
+	srv.Start()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)

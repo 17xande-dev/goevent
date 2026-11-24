@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/auth"
@@ -20,7 +21,8 @@ import (
 	"github.com/17xande-dev/payment"
 	"github.com/17xande-dev/ratelimit"
 	"github.com/17xande-dev/ratelimit/clientip"
-	"github.com/justinas/nosurf"
+	"github.com/17xande-dev/websec/cookie"
+	"github.com/17xande-dev/websec/csrf"
 )
 
 // Handler holds everything the HTTP layer needs. It is created once at startup
@@ -50,6 +52,17 @@ type Handler struct {
 	// store for the lookup it does on every protected request.
 	users             *auth.Store
 	authenticateLogin func(context.Context, string, string) (auth.User, error)
+
+	// session is the admin session cookie; csrf is the one CSRF policy for the
+	// protected group. csrf is built in New, before any route is registered, so
+	// that sign-in can never run without a policy to renew the token with.
+	session *cookie.Cookie
+	csrf    *csrf.Protect
+	// firstParty is the mux behind FirstPartyHandler. The kit asks for a route's
+	// body limit before routing, and the limit is chosen by that mux's own match
+	// (a nearby path spelling gets no larger cap), so the limit function reads
+	// the mux from here. Set once, before serving.
+	firstParty atomic.Pointer[http.ServeMux]
 
 	// adminRoutes is every protected route and the permission it names, recorded
 	// by RegisterAdmin as it wires them. Written once at startup, read-only
@@ -115,7 +128,10 @@ type Deps struct {
 	Users         *auth.Store
 }
 
-func New(d Deps) *Handler {
+// New builds the handler. It returns an error, rather than panicking, for a
+// configuration the CSRF policy cannot use: BASE_URL is the site's own origin,
+// and a malformed one must stop the server at startup.
+func New(d Deps) (*Handler, error) {
 	cfg, log := d.Config, d.Log
 	h := &Handler{
 		cfg: cfg, log: log, tmpl: d.Tmpl, events: d.Events, regs: d.Registrations, signer: d.Signer,
@@ -124,6 +140,28 @@ func New(d Deps) *Handler {
 	}
 	if d.Users != nil {
 		h.authenticateLogin = d.Users.Authenticate
+	}
+	session, err := auth.NewSessionCookie(!cfg.CookieSecure)
+	if err != nil {
+		return nil, fmt.Errorf("admin session cookie: %w", err)
+	}
+	h.session = session
+	h.csrf, err = csrf.New(csrf.Config{
+		// BASE_URL is the site's own origin, the only own-origin setting the app
+		// has; no separate variable.
+		Origin:   cfg.BaseURL,
+		Insecure: !cfg.CookieSecure,
+		// Path "/" because the protected routes span /admin and the public
+		// registration forms, and a cookie has only one path.
+		Path:        "/",
+		Limit:       h.bodyLimit,
+		Oversized:   http.HandlerFunc(h.serveFirstParty),
+		OnFailure:   http.HandlerFunc(h.csrfFailed),
+		OnBodyError: h.bodyRefused,
+		Logger:      log,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("BASE_URL %q cannot be the CSRF origin: %w", cfg.BaseURL, err)
 	}
 	loginByEmail, err := ratelimit.New(ratelimit.Config{
 		Rate: 1.0 / 60, Burst: 5, IdleTTL: 30 * time.Minute,
@@ -149,7 +187,7 @@ func New(d Deps) *Handler {
 		// the checkout's allowance and locking a registrant out of retrying.
 		status: perMinute("payment status", cfg.RateLimits.StatusPerMinute, cfg.ClientIPSource, log, page),
 	}
-	return h
+	return h, nil
 }
 
 // FirstPartyHandler returns everything that changes state — the admin and the
@@ -172,48 +210,40 @@ func (h *Handler) FirstPartyHandler(protect middleware.Middleware) http.Handler 
 	// catch-all is what stops /admin/nonsense falling back to Go's plain 404
 	// while every other unknown URL gets the page.
 	mux.HandleFunc("/", h.notFoundFor(mux))
-	return h.withCSRF(mux)
+	h.firstParty.Store(mux)
+	return h.gateUploads(h.csrf.Handler(mux), mux)
 }
 
-// withCSRF wraps a handler in nosurf. It is one function so that every
-// CSRF-protected group shares a single configuration and a single token pool.
-func (h *Handler) withCSRF(next *http.ServeMux) http.Handler {
-	csrf := nosurf.New(next)
-	csrf.SetBaseCookie(http.Cookie{
-		// Path "/" because the protected routes span /admin and the public
-		// registration forms, and a cookie has only one path.
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   nosurf.MaxAge,
-	})
-	csrf.SetFailureHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The browser's form token is in the discarded body. After nosurf's
-		// origin check, allow only the upload handler's read-only rejection.
-		if uploadTooLarge(r) && nosurf.Reason(r) == nosurf.ErrBadToken && r.Header.Get(nosurf.HeaderName) == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		h.csrfFailed(w, r)
-	}))
+// RequireAdmin is the session check every admin route sits behind, reading the
+// same cookie the sign-in sets.
+func (h *Handler) RequireAdmin() middleware.Middleware {
+	return middleware.RequireAdmin(h.users, h.log, h.session)
+}
 
-	// nosurf compares a request's Origin against one it builds from the Host
-	// header, and assumes https unless told otherwise — so without this every
-	// form on a plain-HTTP deployment is rejected as cross-origin. BaseURL is
-	// the right signal rather than r.TLS: behind a TLS-terminating proxy the
-	// connection is plain HTTP but the browser's origin is https.
-	csrf.SetIsTLSFunc(func(*http.Request) bool { return h.cfg.CookieSecure })
-	return h.limitBodies(csrf, next)
+// serveFirstParty is where the kit hands an oversized upload that passed the
+// origin check: the route's own handler renders its "too large" page and sees
+// csrf.Oversized(r).
+func (h *Handler) serveFirstParty(w http.ResponseWriter, r *http.Request) {
+	h.firstParty.Load().ServeHTTP(w, r)
+}
+
+// renewCSRF replaces the CSRF token at a change of identity (sign-in, sign-out,
+// own password change). It reports whether the caller may carry on; a false has
+// already answered the request. ErrNotProtected means the route is mounted
+// outside the CSRF handler, a wiring mistake that must not fail open.
+func (h *Handler) renewCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if _, err := h.csrf.Renew(w, r); err != nil {
+		h.serverError(w, r, err)
+		return false
+	}
+	return true
 }
 
 // csrfFailed answers a request whose CSRF token was missing or wrong. It is a
 // 403 and nothing else: the request was either forged or made with a stale form,
-// and neither case should be retried silently.
+// and neither case should be retried silently. The kit has already logged the
+// refusal (method, path, reason).
 func (h *Handler) csrfFailed(w http.ResponseWriter, r *http.Request) {
-	h.logger(r).Warn("rejected request with a bad CSRF token",
-		"method", r.Method, "path", r.URL.Path, "reason", nosurf.Reason(r))
-
 	// For htmx, a reload rather than a page: the token is stale, and reloading is
 	// both the explanation and the fix. HX-Refresh is honoured whatever the status,
 	// because htmx handles it before it decides whether to swap anything.
@@ -254,7 +284,7 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	// redirect to the login form — RequireAdmin's htmx answer is a full-page
 	// refresh, which on a public page would loop. It reveals nothing but
 	// who you are, to you.
-	mux.Handle("GET /admin/account/menu", middleware.AttachAdmin(h.users, h.log)(http.HandlerFunc(h.accountMenu)))
+	mux.Handle("GET /admin/account/menu", middleware.AttachAdmin(h.users, h.log, h.session)(http.HandlerFunc(h.accountMenu)))
 
 	// Registering twice would otherwise record every route twice; the mux would
 	// panic first, but a handler mounted on two muxes in a test would not.
@@ -402,7 +432,7 @@ func (h *Handler) newPage(r *http.Request, title string) page {
 		Title:     title,
 		SiteName:  h.cfg.SiteName,
 		Currency:  h.cfg.Currency,
-		CSRFToken: nosurf.Token(r),
+		CSRFToken: csrf.Token(r),
 		BaseURL:   h.cfg.BaseURL,
 
 		FontCSSURL: h.cfg.FontCSSURL,

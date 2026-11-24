@@ -170,7 +170,10 @@ func TestNewGateways_PayFastFormAction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newGateways: %v", err)
 			}
-			h := handler.New(handler.Deps{Config: cfg, Log: log, Gateways: gateways})
+			h, err := handler.New(handler.Deps{Config: cfg, Log: log, Gateways: gateways})
+			if err != nil {
+				t.Fatalf("handler.New: %v", err)
+			}
 			rec := httptest.NewRecorder()
 			// The root redirect is cheap and has the same security headers as the handover.
 			routes(cfg, h, gateways, nil, nil, log).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))

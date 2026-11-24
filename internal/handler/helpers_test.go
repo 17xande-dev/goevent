@@ -29,25 +29,48 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	t.Helper()
 
 	pool := dbtest.Pool(t)
+	// The CSRF origin must be known before the handler is built, so the listener
+	// is opened first and the server started once the handler exists.
+	srv := httptest.NewUnstartedServer(nil)
+	ownOrigin(&cfg, srv)
 	d := testDeps(t, pool, cfg, templateDir, blob.NewFake())
-	h := New(d)
+	h := mustNew(t, d)
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)
 	h.RegisterPayments(mux)
-	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(d.Users, d.Log))
+	firstParty := h.FirstPartyHandler(h.RequireAdmin())
 	mux.Handle("/admin/", firstParty)
 	mux.Handle(RegisterPath, firstParty)
 
 	forms, images := d.Gateways.CSP()
-	srv := httptest.NewServer(middleware.Chain(mux, middleware.SecurityHeaders(middleware.Policy{
+	srv.Config.Handler = middleware.Chain(mux, middleware.SecurityHeaders(middleware.Policy{
 		FrameAncestors: cfg.EmbedOrigins,
 		FormActions:    forms,
 		ImgSources:     images,
-	})))
+	}))
+	srv.Start()
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// ownOrigin makes the server's own listener address the site's BASE_URL, which
+// is what the CSRF check trusts as the app's own origin, unless the test set one.
+func ownOrigin(cfg *config.Config, srv *httptest.Server) {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "http://" + srv.Listener.Addr().String()
+	}
+}
+
+// mustNew is New for a configuration the test knows is valid.
+func mustNew(t *testing.T, d Deps) *Handler {
+	t.Helper()
+	h, err := New(d)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
 }
 
 // testDeps is everything a Handler needs, real stores on pool and fakes at the

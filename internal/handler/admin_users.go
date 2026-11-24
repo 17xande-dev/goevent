@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/middleware"
@@ -367,7 +366,10 @@ func (h *Handler) adminPasswordChange(w http.ResponseWriter, r *http.Request) {
 	// The row behind this cookie is gone, so the cookie is already inert; it is
 	// cleared anyway rather than left in the browser to be sent with every
 	// request until it expires.
-	http.SetCookie(w, h.sessionCookie("", -time.Hour))
+	h.session.Clear(w)
+	if !h.renewCSRF(w, r) {
+		return
+	}
 	h.logger(r).Info("administrator changed their own password", "user", user.ID)
 	http.Redirect(w, r, "/admin/login?notice=password_changed", http.StatusSeeOther)
 }

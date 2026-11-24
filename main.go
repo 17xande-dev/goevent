@@ -141,7 +141,7 @@ func run() error {
 		return err
 	}
 	regs := registrations.NewStore(pool)
-	h := handler.New(handler.Deps{
+	h, err := handler.New(handler.Deps{
 		Config:        cfg,
 		Log:           log,
 		Tmpl:          tmpl,
@@ -154,6 +154,9 @@ func run() error {
 		Images:        images,
 		Users:         users,
 	})
+	if err != nil {
+		return err
+	}
 	// Expired admin sessions and lapsed registration holds are swept in-process,
 	// on this context, so the sweeps stop with the server rather than outliving it.
 	startSessionCleanup(ctx, users, log)
@@ -552,7 +555,7 @@ func routes(cfg config.Config, h *handler.Handler, gateways payment.Registry, us
 	// internal/handler/webhook.go.
 	h.RegisterPayments(mux)
 
-	firstParty := h.FirstPartyHandler(middleware.RequireAdmin(users, log))
+	firstParty := h.FirstPartyHandler(h.RequireAdmin())
 	mux.Handle("/admin/", firstParty)
 	mux.Handle(handler.RegisterPath, firstParty)
 

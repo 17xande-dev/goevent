@@ -17,6 +17,7 @@ import (
 
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/ratelimit/clientip"
+	"github.com/17xande-dev/websec/csrf"
 )
 
 // Config is the fully resolved configuration for one server process.
@@ -512,6 +513,15 @@ func Load() (Config, error) {
 	}
 	if key, err := hex.DecodeString(c.SecretKey); err != nil || len(key) != 32 {
 		return Config{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters; generate with openssl rand -hex 32")
+	}
+
+	// BASE_URL is also the site's own origin for the CSRF check, which compares it
+	// byte for byte with the Origin a browser sends. A value the browser could
+	// never send (a path, upper case, a default port) would make every form fail
+	// as cross-origin, so it stops startup here, where -check-config reports it.
+	if _, err := csrf.New(csrf.Config{Origin: c.BaseURL, Insecure: !c.CookieSecure}); err != nil {
+		return Config{}, fmt.Errorf("config: BASE_URL %q cannot be the site's origin: %w "+
+			"(want lower-case scheme://host[:port] with no path)", c.BaseURL, err)
 	}
 
 	// There is no admin credential in the environment any more: accounts live in

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
+	"github.com/17xande-dev/ratelimit"
 )
 
 func TestFailedLoginDoesNotLogSubmittedAddress(t *testing.T) {
@@ -28,7 +29,7 @@ func TestFailedLoginDoesNotLogSubmittedAddress(t *testing.T) {
 		for _, private := range []string{
 			email,
 			fmt.Sprintf("%x", sha256.Sum256([]byte(email))),
-			fmt.Sprintf("%x", sha256.Sum256([]byte(loginEmailKey(email)))),
+			fmt.Sprintf("%x", sha256.Sum256([]byte(ratelimit.AccountKey(email)))),
 		} {
 			if strings.Contains(logged, private) {
 				t.Fatal("failed-login log contains submitted data")

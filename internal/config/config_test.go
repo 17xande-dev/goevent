@@ -995,3 +995,23 @@ func TestLoad_SMTPHostNeedsEmailFrom(t *testing.T) {
 		t.Errorf("error = %v, want it to name EMAIL_FROM", err)
 	}
 }
+
+// BASE_URL is the CSRF origin, compared byte for byte with the Origin a browser
+// sends, so a value no browser could send stops startup (and -check-config)
+// rather than failing every form as cross-origin.
+func TestLoad_RejectsABaseURLThatCannotBeAnOrigin(t *testing.T) {
+	for _, base := range []string{
+		"https://Events.Example.com",     // upper case
+		"https://events.example.com:443", // default port
+		"https://events.example.com/app", // path
+		"events.example.com",             // no scheme
+	} {
+		t.Run(base, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("BASE_URL", base)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "BASE_URL") {
+				t.Errorf("Load with BASE_URL %q = %v, want an error naming BASE_URL", base, err)
+			}
+		})
+	}
+}

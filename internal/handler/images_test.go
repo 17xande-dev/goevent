@@ -26,8 +26,9 @@ func diskApp(t *testing.T) (*httptest.Server, *blob.Disk, string) {
 
 	cfg := testConfig()
 	cfg.ImageDir = dir
+	cfg.BaseURL = "http://example.test" // the CSRF origin; this server never serves a form
 
-	h := New(testDeps(t, dbtest.Pool(t), cfg, "", storage))
+	h := mustNew(t, testDeps(t, dbtest.Pool(t), cfg, "", storage))
 
 	mux := http.NewServeMux()
 	h.RegisterPublic(mux)

@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/validate"
+	"github.com/17xande-dev/ratelimit"
 	"github.com/17xande-dev/websec"
 )
 
@@ -96,7 +96,7 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 	next := safeNext(r.PostFormValue("next"))
 
 	// Check first so an exhausted address requires no password work.
-	emailKey := loginEmailKey(email)
+	emailKey := ratelimit.AccountKey(email)
 	if h.limits.loginByEmail.Exhausted(emailKey) {
 		w.Header().Set("Retry-After", "60")
 		h.rateLimited(w, r)
@@ -150,19 +150,25 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 // browser plants a token, waits for them to sign in, and holds a session that is
 // now authenticated as them.
 func (h *Handler) startSession(w http.ResponseWriter, r *http.Request, user auth.User) bool {
-	if old, err := r.Cookie(auth.CookieName); err == nil {
-		if err := h.users.DeleteSession(r.Context(), old.Value); err != nil {
+	if old, ok := h.session.Value(r); ok {
+		if err := h.users.DeleteSession(r.Context(), old); err != nil {
 			h.serverError(w, r, err)
 			return false
 		}
 	}
 
-	token, _, err := h.users.IssueSession(r.Context(), user.ID, h.cfg.SessionTTL)
+	token, sess, err := h.users.IssueSession(r.Context(), user.ID, h.cfg.SessionTTL)
 	if err != nil {
 		h.serverError(w, r, err)
 		return false
 	}
-	http.SetCookie(w, h.sessionCookie(token, h.cfg.SessionTTL))
+	// A CSRF token minted before sign-in must not survive into the session: an
+	// attacker who planted a cookie (and so knows its token) would otherwise hold
+	// a valid token for the signed-in user.
+	if !h.renewCSRF(w, r) {
+		return false
+	}
+	h.session.Set(w, token, sess.ExpiresAt)
 	return true
 }
 
@@ -170,15 +176,19 @@ func (h *Handler) adminLogout(w http.ResponseWriter, r *http.Request) {
 	// The row is the session and the cookie is a copy of the key to it, so both
 	// go. Deleting the row is the half that matters: a cookie a browser keeps
 	// after this — a stale tab, a copy taken from a debugger — opens nothing.
-	if cookie, err := r.Cookie(auth.CookieName); err == nil {
-		if err := h.users.DeleteSession(r.Context(), cookie.Value); err != nil {
+	if token, ok := h.session.Value(r); ok {
+		if err := h.users.DeleteSession(r.Context(), token); err != nil {
 			// Logged, not shown. Somebody who has asked to sign out gets signed
 			// out of this browser either way, and an error page in place of the
 			// login form would suggest they are still in.
 			h.logger(r).Error("could not delete the session row on sign-out", "error", err)
 		}
 	}
-	http.SetCookie(w, h.sessionCookie("", -time.Hour))
+	h.session.Clear(w)
+	// The next person at this browser must not inherit the signed-in form tokens.
+	if !h.renewCSRF(w, r) {
+		return
+	}
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 
@@ -306,11 +316,11 @@ func (h *Handler) setupPending(w http.ResponseWriter, r *http.Request) (pending,
 // login form's "you are already signed in" branch. Everything behind
 // RequireAdmin reads middleware.AdminUser instead.
 func (h *Handler) currentSession(r *http.Request) (auth.User, bool) {
-	cookie, err := r.Cookie(auth.CookieName)
-	if err != nil {
+	token, ok := h.session.Value(r)
+	if !ok {
 		return auth.User{}, false
 	}
-	_, user, err := h.users.Session(r.Context(), cookie.Value)
+	_, user, err := h.users.Session(r.Context(), token)
 	if err != nil || user.Disabled {
 		return auth.User{}, false
 	}
@@ -337,30 +347,4 @@ var nextOpts = websec.RedirectOptions{
 // phishing link look like it came from here.
 func safeNext(next string) string {
 	return websec.SafeRedirect(next, nextOpts)
-}
-
-// sessionCookie builds the admin cookie, or its removal when value is empty.
-// Path is /admin, so the cookie is never sent with a request for the public
-// event pages.
-func (h *Handler) sessionCookie(value string, ttl time.Duration) *http.Cookie {
-	c := &http.Cookie{
-		Name:     auth.CookieName,
-		Value:    value,
-		Path:     "/admin",
-		HttpOnly: true,
-		Secure:   h.cfg.CookieSecure,
-		// Hard-coded, not configurable. Strict would sign an operator out of
-		// every link that arrives from anywhere else — including the ones in the
-		// registration notification emails this server sends itself — and None would
-		// send the admin session with a cross-site request, which is the whole
-		// thing CSRF protection exists to stop needing to worry about.
-		SameSite: http.SameSiteLaxMode,
-	}
-	if ttl > 0 {
-		c.Expires = time.Now().Add(ttl)
-		c.MaxAge = int(ttl.Seconds())
-	} else {
-		c.MaxAge = -1
-	}
-	return c
 }
