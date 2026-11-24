@@ -188,3 +188,29 @@ func TestEventImageOversizedWithHeaderTokenIsRefused(t *testing.T) {
 		t.Fatalf("oversized upload with a header token: status %d, reads %d, body %q; want a bare 403 and no reads", w.Code, body.calls, excerpt(w.Body.String()))
 	}
 }
+
+// Only a multipart body gets the image allowance. Any other body on the image
+// route keeps the small default cap, so a 5 MiB urlencoded, JSON or text body is
+// refused from its declared length without a single read.
+func TestEventImageRouteCapsNonMultipartBodies(t *testing.T) {
+	s := setupApp(t)
+	e := createEvent(t, s, "Camp")
+	path := s.srv.URL + "/admin/events/" + e.ID + "/image"
+	for _, ct := range []string{"application/x-www-form-urlencoded", "application/json", "text/plain"} {
+		t.Run(ct, func(t *testing.T) {
+			body := &bodyProbe{}
+			r := httptest.NewRequest(http.MethodPost, path, body)
+			r.ContentLength = blob.MaxUploadBytes
+			r.Header.Set("Content-Type", ct)
+			r.Header.Set("Origin", s.srv.URL)
+			for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+				r.AddCookie(c)
+			}
+			w := httptest.NewRecorder()
+			s.srv.Config.Handler.ServeHTTP(w, r)
+			if w.Code != http.StatusRequestEntityTooLarge || body.calls != 0 {
+				t.Errorf("status %d, reads %d; want 413, 0", w.Code, body.calls)
+			}
+		})
+	}
+}
