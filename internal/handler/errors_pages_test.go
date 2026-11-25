@@ -273,5 +273,6 @@ func brokenApp(t *testing.T, cfg config.Config) *testServer {
 	// Closed after the server is built, so construction succeeds and only the
 	// queries fail — which is what a database that goes away mid-life looks like.
 	pool.Close()
+	// A public client keeps cookies like a browser; the old srv.Client() had no jar.
 	return &testServer{srv, webtest.NewServer(t, srv)}
 }

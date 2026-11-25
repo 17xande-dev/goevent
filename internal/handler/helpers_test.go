@@ -53,6 +53,7 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *testServer 
 	srv.Start()
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)
+	// A public client keeps cookies like a browser; the old srv.Client() had no jar.
 	return &testServer{srv, webtest.NewServer(t, srv)}
 }
 

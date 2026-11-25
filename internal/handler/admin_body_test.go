@@ -39,7 +39,7 @@ func TestLoginRejectsMultipartWithoutReading(t *testing.T) {
 	s.srv.Config.Handler.ServeHTTP(w, r)
 	checkTemp()
 	if w.Code != http.StatusUnsupportedMediaType || body.calls != 0 {
-		t.Errorf("multipart login: status %d, reads %d; want 415, 0, 0", w.Code, body.calls)
+		t.Errorf("multipart login: status %d, reads %d; want 415, 0", w.Code, body.calls)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestLoginCapsDeclaredAndStreamedForms(t *testing.T) {
 	const limit = 256 << 10
 	s := newApp(t)
 	token := csrfToken(t, s.srv)
-	tokenCookie, ok := s.srv.browser.With(t).Cookie(webtest.TokenField)
+	tokenCookie, ok := s.srv.browser.With(t).Cookie(s.handler.csrf.CookieName())
 	if !ok {
 		t.Fatal("login form did not set a CSRF cookie")
 	}
@@ -64,7 +64,7 @@ func TestLoginCapsDeclaredAndStreamedForms(t *testing.T) {
 		}
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Origin", s.srv.URL)
-		r.AddCookie(&http.Cookie{Name: webtest.TokenField, Value: tokenCookie})
+		r.AddCookie(&http.Cookie{Name: s.handler.csrf.CookieName(), Value: tokenCookie})
 		w := httptest.NewRecorder()
 		s.srv.Config.Handler.ServeHTTP(w, r)
 		maxRead := int64(limit + (64 << 10))
