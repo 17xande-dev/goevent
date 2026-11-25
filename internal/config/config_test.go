@@ -1060,8 +1060,8 @@ func TestLoad_BoolErrorsNeverEchoTheValue(t *testing.T) {
 		setRequired(t)
 		t.Setenv(k.key, "zq7-sentinel")
 		_, err := Load()
-		if err == nil || strings.Contains(err.Error(), "zq7-sentinel") {
-			t.Errorf("%s: want an error without the value, got %v", k.key, err)
+		if err == nil || !strings.Contains(err.Error(), k.key) || strings.Contains(err.Error(), "zq7-sentinel") {
+			t.Errorf("%s: want an error naming the key and not the value, got %v", k.key, err)
 		}
 	}
 }
