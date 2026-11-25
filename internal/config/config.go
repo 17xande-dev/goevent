@@ -8,11 +8,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/17xande-dev/mailer"
@@ -406,6 +409,30 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	// Booleans are read up front so that every bad one is reported, and before
+	// anything is built from them: a typo must stop startup, not pick a side.
+	var flagErrs []error
+	flag := func(key string, def bool) bool {
+		v, err := boolEnv(key, def)
+		if err != nil {
+			flagErrs = append(flagErrs, err)
+		}
+		return v
+	}
+	themeReload := flag("THEME_RELOAD", false)
+	blobUseTLS := flag("BLOB_USE_TLS", true)
+	// Sandbox defaults to true: the wrong default here takes real money from a
+	// real card during somebody's first afternoon with the project.
+	//
+	// The cost of that default is the mirror failure — a production deployment
+	// that never sets it takes no money and looks fine — so anything that deploys
+	// this is expected to set it explicitly, and the Compose files in deploy/
+	// require it. See the check further down for the half-done version of
+	// turning it off.
+	payfastSandbox := flag("PAYFAST_SANDBOX", true)
+	if len(flagErrs) > 0 {
+		return Config{}, errors.Join(flagErrs...)
+	}
 	c := Config{
 		Port:            env("PORT", "8080"),
 		BaseURL:         strings.TrimRight(env("BASE_URL", "http://localhost:8080"), "/"),
@@ -414,7 +441,7 @@ func Load() (Config, error) {
 		Currency:        env("CURRENCY", "ZAR"),
 		TemplateDir:     os.Getenv("TEMPLATE_DIR"),
 		StaticDir:       strings.TrimSpace(os.Getenv("STATIC_DIR")),
-		ThemeReload:     boolEnv("THEME_RELOAD", false),
+		ThemeReload:     themeReload,
 		LogLevel:        env("LOG_LEVEL", "info"),
 		LogFormat:       env("LOG_FORMAT", "json"),
 		SetupToken:      strings.TrimSpace(sec.get("SETUP_TOKEN")),
@@ -435,7 +462,7 @@ func Load() (Config, error) {
 			AccessKey:     os.Getenv("BLOB_ACCESS_KEY_ID"),
 			SecretKey:     sec.get("BLOB_SECRET_ACCESS_KEY"),
 			Region:        env("BLOB_REGION", "auto"),
-			UseTLS:        boolEnv("BLOB_USE_TLS", true),
+			UseTLS:        blobUseTLS,
 			PublicBaseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("BLOB_PUBLIC_BASE_URL")), "/"),
 		},
 		SMTP: SMTP{
@@ -461,16 +488,8 @@ func Load() (Config, error) {
 			MerchantID:  os.Getenv("PAYFAST_MERCHANT_ID"),
 			MerchantKey: sec.get("PAYFAST_MERCHANT_KEY"),
 			Passphrase:  sec.get("PAYFAST_PASSPHRASE"),
-			// Sandbox defaults to true: the wrong default here takes real money
-			// from a real card during somebody's first afternoon with the project.
-			//
-			// The cost of that default is the mirror failure — a production
-			// deployment that never sets it takes no money and looks fine — so
-			// anything that deploys this is expected to set it explicitly, and
-			// the Compose files in deploy/ require it. See the check further
-			// down for the half-done version of turning it off.
-			Sandbox:   boolEnv("PAYFAST_SANDBOX", true),
-			NotifyURL: strings.TrimSpace(os.Getenv("PAYFAST_NOTIFY_URL")),
+			Sandbox:     payfastSandbox,
+			NotifyURL:   strings.TrimSpace(os.Getenv("PAYFAST_NOTIFY_URL")),
 		},
 		SnapScan: SnapScan{
 			SnapCode:       strings.TrimSpace(os.Getenv("SNAPSCAN_SNAP_CODE")),
@@ -909,6 +928,10 @@ var secretKeys = []string{
 // secrets holds the values read from KEY_FILE for the keys that had one.
 type secrets map[string]string
 
+// maxSecretFile bounds a secret file. Real credentials are a few hundred bytes;
+// the cap stops a wrong path (a log, a device) from being read whole.
+const maxSecretFile = 64 << 10
+
 // loadSecrets reads KEY_FILE for each key that has one, so that a file which is
 // missing or unreadable is a boot failure naming the setting, rather than an
 // empty credential discovered at the first checkout.
@@ -917,9 +940,14 @@ type secrets map[string]string
 // most of these as `${KEY:-}`, i.e. present but empty, and that must not read as
 // a conflict with a KEY_FILE alongside it.
 //
-// Trailing newlines are stripped, and nothing else is: `pass show` and most
-// editors end a file with one, and a shell's $(< file) drops them the same way —
-// the convention the official Postgres image's *_FILE variables follow.
+// Exactly one trailing newline (LF or CRLF) is stripped, and nothing else: `pass
+// show` and most editors end a file with one, and a shell's $(< file) drops it
+// the same way — the convention the official Postgres image's *_FILE variables
+// follow. A secret that ends in spaces or a second newline keeps them.
+//
+// Errors name KEY_FILE and never the path or the contents: a path variable
+// often gets a secret pasted into it by mistake, and the log is not the place
+// for either.
 func loadSecrets(keys ...string) (secrets, error) {
 	s := make(secrets)
 	for _, key := range keys {
@@ -930,13 +958,56 @@ func loadSecrets(keys ...string) (secrets, error) {
 		if os.Getenv(key) != "" {
 			return nil, fmt.Errorf("config: %s and %s_FILE are both set; set one", key, key)
 		}
-		b, err := os.ReadFile(path)
+		v, err := readSecretFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("config: %s_FILE: %w", key, err)
 		}
-		s[key] = strings.TrimRight(string(b), "\r\n")
+		s[key] = v
 	}
 	return s, nil
+}
+
+// readSecretFile returns the file's contents minus one trailing newline. Its
+// errors carry no path: an *os.PathError is reduced to the underlying cause.
+func readSecretFile(path string) (string, error) {
+	// O_NONBLOCK so that opening a FIFO with no writer returns at once and the
+	// type check below can refuse it, rather than blocking startup forever. It has
+	// no effect on a regular file.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err
+		}
+		return "", fmt.Errorf("cannot be read: %w", err)
+	}
+	defer f.Close()
+	// Checked on the open descriptor, so the file cannot change type between the
+	// check and the read.
+	info, err := f.Stat()
+	if err != nil {
+		return "", errors.New("cannot be read")
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("must be a regular file")
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxSecretFile+1))
+	if err != nil {
+		return "", errors.New("cannot be read")
+	}
+	if len(b) > maxSecretFile {
+		return "", fmt.Errorf("is larger than %d bytes", maxSecretFile)
+	}
+	v := string(b)
+	if t, ok := strings.CutSuffix(v, "\r\n"); ok {
+		v = t
+	} else if t, ok := strings.CutSuffix(v, "\n"); ok {
+		v = t
+	}
+	if v == "" {
+		return "", errors.New("is empty")
+	}
+	return v, nil
 }
 
 // get returns key's value from its file if it had one, else from the
@@ -948,17 +1019,20 @@ func (s secrets) get(key string) string {
 	return os.Getenv(key)
 }
 
-// boolEnv reads a flag. Only the obvious spellings count as true, and anything
-// else is false — a typo turning a safety default off silently is worse than a
-// typo being ignored.
-func boolEnv(key string, def bool) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+// boolEnv reads a flag. Only the exact spellings true and false are accepted
+// (empty or unset means def). Anything else is an error naming the key, because
+// a typo in a safety default (PAYFAST_SANDBOX, BLOB_USE_TLS) must stop startup
+// rather than quietly pick a side. The value is never echoed.
+func boolEnv(key string, def bool) (bool, error) {
+	switch os.Getenv(key) {
 	case "":
-		return def
-	case "1", "true", "yes", "on":
-		return true
+		return def, nil
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
 	default:
-		return false
+		return def, fmt.Errorf("config: %s must be true or false", key)
 	}
 }
 

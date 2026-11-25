@@ -1,12 +1,15 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -1015,5 +1018,226 @@ func TestLoad_RejectsABaseURLThatCannotBeAnOrigin(t *testing.T) {
 				t.Errorf("Load with BASE_URL %q = %v, want an error naming BASE_URL", base, err)
 			}
 		})
+	}
+}
+
+// Every boolean the loader reads, with the default it falls back on. The list is
+// the single place a new flag must be added: TestBoolKeysAreAllCovered fails if
+// the source reads a boolEnv key that is not here.
+var boolKeys = []struct {
+	key string
+	def bool
+}{
+	{"PAYFAST_SANDBOX", true},
+	{"BLOB_USE_TLS", true},
+	{"THEME_RELOAD", false},
+}
+
+func TestLoad_BoolKeysAreExactlyTrueOrFalse(t *testing.T) {
+	// The three that matter most: a typo in PAYFAST_SANDBOX must never take live
+	// payments, and one in BLOB_USE_TLS must never fall back to plaintext storage
+	// traffic. Anything but the two exact spellings stops startup, naming the key
+	// and never the value.
+	for _, k := range boolKeys {
+		for _, bad := range []string{"ture", "True", "TRUE", "FALSE", "1", "0", "yes", "no", "on", "off", " true", "false ", "t", "zq7-sentinel"} {
+			t.Run(k.key+"="+bad, func(t *testing.T) {
+				setRequired(t)
+				t.Setenv(k.key, bad)
+				_, err := Load()
+				if err == nil {
+					t.Fatalf("%s=%q was accepted", k.key, bad)
+				}
+				if !strings.Contains(err.Error(), k.key) {
+					t.Errorf("error does not name %s: %v", k.key, err)
+				}
+			})
+		}
+	}
+}
+
+func TestLoad_BoolErrorsNeverEchoTheValue(t *testing.T) {
+	for _, k := range boolKeys {
+		setRequired(t)
+		t.Setenv(k.key, "zq7-sentinel")
+		_, err := Load()
+		if err == nil || strings.Contains(err.Error(), "zq7-sentinel") {
+			t.Errorf("%s: want an error without the value, got %v", k.key, err)
+		}
+	}
+}
+
+func TestLoad_BoolKeysAcceptTrueFalseAndEmptyMeansDefault(t *testing.T) {
+	get := func(c Config, key string) bool {
+		switch key {
+		case "PAYFAST_SANDBOX":
+			return c.PayFast.Sandbox
+		case "BLOB_USE_TLS":
+			return c.Blob.UseTLS
+		default:
+			return c.ThemeReload
+		}
+	}
+	for _, k := range boolKeys {
+		for _, tc := range []struct {
+			val  string
+			want bool
+		}{{"true", true}, {"false", false}, {"", k.def}} {
+			t.Run(k.key+"="+tc.val, func(t *testing.T) {
+				setRequired(t)
+				// Sandbox off needs a non-demo merchant; see the guard below.
+				t.Setenv("PAYFAST_MERCHANT_ID", "12345678")
+				t.Setenv(k.key, tc.val)
+				c, err := Load()
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				if got := get(c, k.key); got != tc.want {
+					t.Errorf("%s=%q: got %v, want %v", k.key, tc.val, got, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestLoad_BadBoolsAreAllReported(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PAYFAST_SANDBOX", "ture")
+	t.Setenv("BLOB_USE_TLS", "nope")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("bad booleans were accepted")
+	}
+	for _, key := range []string{"PAYFAST_SANDBOX", "BLOB_USE_TLS"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error does not name %s: %v", key, err)
+		}
+	}
+}
+
+func TestBoolKeysAreAllCovered(t *testing.T) {
+	src, err := os.ReadFile("config.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`boolEnv\("([A-Z_]+)"`)
+	read := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		read[m[1]] = true
+	}
+	for _, k := range boolKeys {
+		delete(read, k.key)
+	}
+	if len(read) > 0 {
+		t.Errorf("config.go reads boolean keys the tests do not cover: %v", read)
+	}
+}
+
+func TestLoad_SecretFileErrorsNeverShowThePath(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "distinctive-missing-name")
+	fifo := filepath.Join(dir, "distinctive-fifo-name")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("no FIFOs here: %v", err)
+	}
+	big := filepath.Join(dir, "distinctive-big-name")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("a"), 70<<10), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(dir, "distinctive-empty-name")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newline := filepath.Join(dir, "distinctive-newline-name")
+	if err := os.WriteFile(newline, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"missing": missing, "directory": dir, "fifo": fifo,
+		"too big": big, "empty": empty, "newline only": newline,
+	} {
+		t.Run(name, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("SMTP_PASSWORD_FILE", path)
+			done := make(chan error, 1)
+			go func() { _, err := Load(); done <- err }()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Load blocked")
+			}
+			if err == nil {
+				t.Fatal("the bad secret file was accepted")
+			}
+			if !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE") {
+				t.Errorf("error does not name SMTP_PASSWORD_FILE: %v", err)
+			}
+			if (name == "directory" || name == "fifo") && !strings.Contains(err.Error(), "regular file") {
+				t.Errorf("%s was not refused as a non-regular file: %v", name, err)
+			}
+			for _, leak := range []string{path, filepath.Base(path), dir} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("error shows the path (%q): %v", leak, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLoad_SecretFileLimits(t *testing.T) {
+	setRequired(t)
+	write := func(b []byte) string {
+		p := filepath.Join(t.TempDir(), "s")
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// Exactly 64 KiB is allowed; one byte more is not.
+	t.Setenv("SMTP_PASSWORD_FILE", write(bytes.Repeat([]byte("a"), 64<<10)))
+	if _, err := Load(); err != nil {
+		t.Errorf("a 64 KiB secret was refused: %v", err)
+	}
+	t.Setenv("SMTP_PASSWORD_FILE", write(bytes.Repeat([]byte("a"), 64<<10+1)))
+	if _, err := Load(); err == nil {
+		t.Error("a secret over 64 KiB was accepted")
+	}
+}
+
+func TestLoad_SecretStripsExactlyOneTrailingNewline(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"pw\n", "pw"},
+		{"pw\r\n", "pw"},
+		{"pw\n\n", "pw\n"},
+		{"pw\r\n\r\n", "pw\r\n"},
+		{"pw\r", "pw\r"},
+		{"pw ", "pw "},
+		{" pw\t\n", " pw\t"},
+	} {
+		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("SMTP_PASSWORD_FILE", writeSecret(t, tc.in))
+			c, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.SMTP.Password != tc.want {
+				t.Errorf("Password = %q, want %q", c.SMTP.Password, tc.want)
+			}
+		})
+	}
+}
+
+// Secrets are read before anything else is validated: a bad file is reported
+// even when the rest of the configuration is also wrong, and Load itself never
+// touches the database (main connects only after Load returns).
+func TestLoad_SecretFilesAreReadFirst(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PAYFAST_SANDBOX", "ture")
+	t.Setenv("LOG_LEVEL", "loud")
+	t.Setenv("SMTP_PASSWORD_FILE", filepath.Join(t.TempDir(), "gone"))
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE") {
+		t.Fatalf("want the secret-file error first, got %v", err)
 	}
 }
