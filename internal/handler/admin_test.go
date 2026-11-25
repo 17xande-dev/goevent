@@ -239,19 +239,17 @@ func signIn(t *testing.T, srv *testServer) {
 	signInAs(t, srv, testEmail, testPassword)
 }
 
+// signInAs signs in as email in a fresh browser: switching accounts is a different
+// person, not the same jar. Session replacement on sign-in is pinned separately by
+// TestAdminAuth_SignInReplacesAnExistingSession.
 func signInAs(t *testing.T, srv *testServer, email, password string) {
 	t.Helper()
 
-	res, body := post(t, srv, "/admin/login", url.Values{
+	srv.browser = webtest.NewServer(t, srv.Server, browserFormHeaders)
+	srv.browser.With(t).SignIn("/admin/login", url.Values{
 		"email":    {email},
 		"password": {password},
 	})
-	if res.StatusCode != http.StatusSeeOther {
-		t.Fatalf("sign in as %s = %d %s", email, res.StatusCode, body)
-	}
-	if len(res.Cookies()) == 0 {
-		t.Fatal("sign in set no cookie")
-	}
 }
 
 func TestAdmin_LoginAcceptsPreMigrationHash(t *testing.T) {
