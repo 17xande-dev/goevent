@@ -2,15 +2,14 @@ package handler
 
 import (
 	"fmt"
-	"html"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/config"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 func TestAdminCookieAttributes(t *testing.T) {
@@ -27,78 +26,67 @@ func TestAdminCookieAttributes(t *testing.T) {
 			s := newApp(t, func(c *config.Config) {
 				c.CookieSecure, c.SessionTTL, c.BaseURL = secure, ttl, origin
 			})
-			send := func(method, path string, form url.Values, cookies ...*http.Cookie) *httptest.ResponseRecorder {
-				r := httptest.NewRequest(method, origin+path, strings.NewReader(form.Encode()))
-				r.Header.Set("Origin", origin)
+			send := func(method, path string, form url.Values, cookies ...*http.Cookie) *webtest.Response {
+				// Each request specifies its cookies, including the deliberate use
+				// of the pre-login CSRF cookie and token on logout.
+				c := webtest.New(t, s.srv.Config.Handler, origin, webtest.WithOrigin(origin))
+				r := c.NewRequest(method, path, strings.NewReader(form.Encode()))
 				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				for _, c := range cookies {
-					r.AddCookie(c)
+				for _, ck := range cookies {
+					r.AddCookie(ck)
 				}
-				w := httptest.NewRecorder()
-				s.srv.Config.Handler.ServeHTTP(w, r)
-				return w
+				return c.Do(r)
 			}
-			cookie := func(w *httptest.ResponseRecorder, name, path string) *http.Cookie {
+			cookie := func(r *webtest.Response, name, path string, session, cleared bool) *http.Cookie {
 				t.Helper()
-				for _, c := range w.Result().Cookies() {
-					if c.Name != name {
-						continue
-					}
-					if c.Path != path || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Secure != secure {
-						t.Errorf("attributes for %s: Path=%q HttpOnly=%t SameSite=%v Secure=%t", name, c.Path, c.HttpOnly, c.SameSite, c.Secure)
-					}
-					return c
-				}
-				t.Fatalf("response status %d: missing %s cookie", w.Code, name)
-				return nil
+				return webtest.WantCookie(t, r, webtest.CookieWant{
+					Name: name, Path: path, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+					Secure: secure, Session: session, Cleared: cleared,
+				})
 			}
 			loginForm := send(http.MethodGet, "/admin/login", nil)
-			if loginForm.Code != http.StatusOK {
-				t.Fatalf("login form: status %d", loginForm.Code)
+			if loginForm.Status != http.StatusOK {
+				t.Fatalf("login form: status %d", loginForm.Status)
 			}
-			csrf := cookie(loginForm, csrfName, "/")
+			csrf := cookie(loginForm, csrfName, "/", true, false)
 			// Session-only: it used to live 365 days, which outlasts every session.
-			if csrf.MaxAge != 0 || !csrf.Expires.IsZero() || csrf.Value == "" {
+			if csrf.Value == "" {
 				t.Error("CSRF cookie must carry a value and end with the browser session (no Max-Age, no Expires)")
 			}
 			before := time.Now()
 			login := send(http.MethodPost, "/admin/login", url.Values{
 				"email": {testEmail}, "password": {testPassword}, "csrf_token": {csrfFromResponse(t, loginForm)},
 			}, csrf)
-			if login.Code != http.StatusSeeOther {
-				t.Fatalf("sign in: status %d", login.Code)
+			if login.Status != http.StatusSeeOther {
+				t.Fatalf("sign in: status %d", login.Status)
 			}
-			session := cookie(login, sessionName, "/admin")
+			session := cookie(login, sessionName, "/admin", false, false)
 			// The kit floors Max-Age, so it may be a second under the TTL but never over.
 			if session.Value == "" || session.MaxAge > int(ttl.Seconds()) || session.MaxAge < int(ttl.Seconds())-1 ||
 				session.Expires.Before(before.Add(ttl).Truncate(time.Second)) || session.Expires.After(time.Now().Add(ttl)) {
 				t.Error("session cookie must carry a value and expire at the configured TTL")
 			}
 			// The sign-in renews the CSRF cookie, so the one served with the form is replaced.
-			if renewed := cookie(login, csrfName, "/"); renewed.Value == csrf.Value {
+			if renewed := cookie(login, csrfName, "/", false, false); renewed.Value == csrf.Value {
 				t.Error("sign-in did not replace the CSRF cookie")
 			}
 
 			logout := send(http.MethodPost, "/admin/logout", url.Values{
 				"csrf_token": {csrfFromResponse(t, loginForm)},
 			}, csrf, session)
-			if logout.Code != http.StatusSeeOther || logout.Header().Get("Location") != "/admin/login" {
-				t.Fatalf("logout: status %d, Location %q", logout.Code, logout.Header().Get("Location"))
+			if logout.Status != http.StatusSeeOther || logout.Location() != "/admin/login" {
+				t.Fatalf("logout: status %d, Location %q", logout.Status, logout.Location())
 			}
-			cleared := cookie(logout, sessionName, "/admin")
+			cleared := cookie(logout, sessionName, "/admin", false, true)
 			// The kit also sends an epoch Expires, for clients that ignore Max-Age.
-			if cleared.Value != "" || cleared.MaxAge >= 0 || cleared.Expires.After(time.Unix(0, 0).Add(time.Second)) {
+			if cleared.Value != "" || cleared.Expires.After(time.Unix(0, 0).Add(time.Second)) {
 				t.Error("logout must clear the cookie immediately with an empty value and negative MaxAge")
 			}
 		})
 	}
 }
 
-func csrfFromResponse(t *testing.T, w *httptest.ResponseRecorder) string {
+func csrfFromResponse(t *testing.T, r *webtest.Response) string {
 	t.Helper()
-	m := csrfFieldRE.FindStringSubmatch(w.Body.String())
-	if m == nil {
-		t.Fatal("login form has no CSRF token")
-	}
-	return html.UnescapeString(m[1])
+	return r.Page().Token()
 }

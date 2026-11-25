@@ -11,6 +11,7 @@ import (
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/middleware"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 // The invariant these tests defend: an error response either fills the target it
@@ -252,7 +253,7 @@ const brokenPath = "/admin/setup"
 //
 // Request IDs are wired here as main.go wires them, because the reference on the
 // error page is half of what these tests are about.
-func brokenApp(t *testing.T, cfg config.Config) *httptest.Server {
+func brokenApp(t *testing.T, cfg config.Config) *testServer {
 	t.Helper()
 
 	pool := dbtest.Pool(t)
@@ -272,5 +273,5 @@ func brokenApp(t *testing.T, cfg config.Config) *httptest.Server {
 	// Closed after the server is built, so construction succeeds and only the
 	// queries fail — which is what a database that goes away mid-life looks like.
 	pool.Close()
-	return srv
+	return &testServer{srv, webtest.NewServer(t, srv)}
 }

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -12,11 +11,12 @@ import (
 	"github.com/17xande-dev/goevent/internal/blob"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 // secureApp is the production shape: https BASE_URL, so the prefixed cookie
-// names a browser would enforce. A plain httptest server cannot hold Secure
-// cookies in a jar, so these tests drive the real handler with explicit cookies.
+// names a browser would enforce. Each in-process request carries the explicit
+// cookies for that case so the jar cannot hide a stale or misnamed cookie.
 type secureApp struct {
 	*app
 	origin string
@@ -30,36 +30,22 @@ func newSecureApp(t *testing.T) secureApp {
 	}), origin}
 }
 
-func (s secureApp) send(t *testing.T, method, path string, form url.Values, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+func (s secureApp) send(t *testing.T, method, path string, form url.Values, cookies ...*http.Cookie) *webtest.Response {
 	t.Helper()
-	var body *strings.Reader
-	if form != nil {
-		body = strings.NewReader(form.Encode())
-	} else {
-		body = strings.NewReader("")
-	}
-	r := httptest.NewRequest(method, s.origin+path, body)
-	r.Header.Set("Origin", s.origin)
+	c := webtest.New(t, s.srv.Config.Handler, s.origin, webtest.WithOrigin(s.origin))
+	r := c.NewRequest(method, path, strings.NewReader(form.Encode()))
 	if form != nil {
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	for _, c := range cookies {
-		r.AddCookie(c)
+	for _, ck := range cookies {
+		r.AddCookie(ck)
 	}
-	w := httptest.NewRecorder()
-	s.srv.Config.Handler.ServeHTTP(w, r)
-	return w
+	return c.Do(r)
 }
 
-func setCookie(t *testing.T, w *httptest.ResponseRecorder, name string) *http.Cookie {
+func setCookie(t *testing.T, r *webtest.Response, name string) *http.Cookie {
 	t.Helper()
-	for _, c := range w.Result().Cookies() {
-		if c.Name == name {
-			return c
-		}
-	}
-	t.Fatalf("status %d: response set no %s cookie", w.Code, name)
-	return nil
+	return r.SetCookie(name)
 }
 
 const (
@@ -81,8 +67,8 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 	login := s.send(t, http.MethodPost, "/admin/login", url.Values{
 		"email": {testEmail}, "password": {testPassword}, "csrf_token": {beforeToken},
 	}, before)
-	if login.Code != http.StatusSeeOther {
-		t.Fatalf("sign in: status %d", login.Code)
+	if login.Status != http.StatusSeeOther {
+		t.Fatalf("sign in: status %d", login.Status)
 	}
 	session := setCookie(t, login, secureSessionName)
 	signedIn := setCookie(t, login, secureCSRFName)
@@ -95,12 +81,12 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 	forged := s.send(t, http.MethodPost, "/admin/events", url.Values{
 		"csrf_token": {beforeToken}, "title": {"Forged"},
 	}, signedIn, session)
-	if forged.Code != http.StatusForbidden {
-		t.Errorf("the pre-sign-in token after sign-in = %d, want 403", forged.Code)
+	if forged.Status != http.StatusForbidden {
+		t.Errorf("the pre-sign-in token after sign-in = %d, want 403", forged.Status)
 	}
 	page := s.send(t, http.MethodGet, accountPath, nil, signedIn, session)
-	if page.Code != http.StatusOK {
-		t.Fatalf("account page: status %d", page.Code)
+	if page.Status != http.StatusOK {
+		t.Fatalf("account page: status %d", page.Status)
 	}
 	signedInToken := csrfFromResponse(t, page)
 
@@ -110,8 +96,8 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 		"csrf_token": {signedInToken}, "current_password": {testPassword},
 		"password": {"a different long passphrase"}, "password_confirm": {"a different long passphrase"},
 	}, signedIn, session)
-	if change.Code != http.StatusSeeOther {
-		t.Fatalf("password change: status %d", change.Code)
+	if change.Status != http.StatusSeeOther {
+		t.Fatalf("password change: status %d", change.Status)
 	}
 	afterChange := setCookie(t, change, secureCSRFName)
 	if afterChange.Value == "" || afterChange.Value == signedIn.Value {
@@ -123,8 +109,8 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 	replay := s.send(t, http.MethodPost, "/admin/login", url.Values{
 		"email": {testEmail}, "password": {"a different long passphrase"}, "csrf_token": {signedInToken},
 	}, afterChange)
-	if replay.Code != http.StatusForbidden {
-		t.Errorf("the signed-in token after a password change = %d, want 403", replay.Code)
+	if replay.Status != http.StatusForbidden {
+		t.Errorf("the signed-in token after a password change = %d, want 403", replay.Status)
 	}
 
 	// Sign-out, from a fresh sign-in.
@@ -132,15 +118,15 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 	login = s.send(t, http.MethodPost, "/admin/login", url.Values{
 		"email": {testEmail}, "password": {"a different long passphrase"}, "csrf_token": {csrfFromResponse(t, form)},
 	}, afterChange)
-	if login.Code != http.StatusSeeOther {
-		t.Fatalf("second sign in: status %d", login.Code)
+	if login.Status != http.StatusSeeOther {
+		t.Fatalf("second sign in: status %d", login.Status)
 	}
 	session, signedIn = setCookie(t, login, secureSessionName), setCookie(t, login, secureCSRFName)
 	page = s.send(t, http.MethodGet, accountPath, nil, signedIn, session)
 	signedInToken = csrfFromResponse(t, page)
 	logout := s.send(t, http.MethodPost, "/admin/logout", url.Values{"csrf_token": {signedInToken}}, signedIn, session)
-	if logout.Code != http.StatusSeeOther {
-		t.Fatalf("sign out: status %d", logout.Code)
+	if logout.Status != http.StatusSeeOther {
+		t.Fatalf("sign out: status %d", logout.Status)
 	}
 	after := setCookie(t, logout, secureCSRFName)
 	if after.Value == "" || after.Value == signedIn.Value {
@@ -153,8 +139,8 @@ func TestCSRFTokenIsRenewedAtSignInSignOutAndPasswordChange(t *testing.T) {
 	replay = s.send(t, http.MethodPost, "/admin/login", url.Values{
 		"email": {testEmail}, "password": {"a different long passphrase"}, "csrf_token": {signedInToken},
 	}, after)
-	if replay.Code != http.StatusForbidden {
-		t.Errorf("the signed-in token after sign-out = %d, want 403", replay.Code)
+	if replay.Status != http.StatusForbidden {
+		t.Errorf("the signed-in token after sign-out = %d, want 403", replay.Status)
 	}
 }
 
@@ -170,16 +156,16 @@ func TestBareNamedSessionCookieIsIgnored(t *testing.T) {
 	bare := &http.Cookie{Name: "admin_session", Value: token}
 	prefixed := &http.Cookie{Name: secureSessionName, Value: token}
 
-	if w := s.send(t, http.MethodGet, "/admin/events", nil, prefixed); w.Code != http.StatusOK {
-		t.Fatalf("prefixed session cookie = %d, want 200 (the fixture is wrong)", w.Code)
+	if w := s.send(t, http.MethodGet, "/admin/events", nil, prefixed); w.Status != http.StatusOK {
+		t.Fatalf("prefixed session cookie = %d, want 200 (the fixture is wrong)", w.Status)
 	}
 	w := s.send(t, http.MethodGet, "/admin/events", nil, bare)
-	if w.Code != http.StatusSeeOther || !strings.HasPrefix(w.Header().Get("Location"), "/admin/login") {
-		t.Errorf("bare-named session cookie = %d to %q, want a redirect to sign in", w.Code, w.Header().Get("Location"))
+	if w.Status != http.StatusSeeOther || !strings.HasPrefix(w.Location(), "/admin/login") {
+		t.Errorf("bare-named session cookie = %d to %q, want a redirect to sign in", w.Status, w.Location())
 	}
 	// The login form's "already signed in" shortcut reads the cookie too.
-	if w := s.send(t, http.MethodGet, "/admin/login", nil, bare); w.Code != http.StatusOK {
-		t.Errorf("sign-in page with a bare-named cookie = %d, want 200 (not signed in)", w.Code)
+	if w := s.send(t, http.MethodGet, "/admin/login", nil, bare); w.Status != http.StatusOK {
+		t.Errorf("sign-in page with a bare-named cookie = %d, want 200 (not signed in)", w.Status)
 	}
 }
 
@@ -227,8 +213,8 @@ func TestAdminSessionIdleLimitThroughTheRoutes(t *testing.T) {
 
 	// Used 10 minutes ago: live, and the request records that it was used.
 	setLastSeen(10 * time.Minute)
-	if w := s.send(t, http.MethodGet, "/admin/events", nil, cookie); w.Code != http.StatusOK {
-		t.Fatalf("session idle for 10 minutes = %d, want 200", w.Code)
+	if w := s.send(t, http.MethodGet, "/admin/events", nil, cookie); w.Status != http.StatusOK {
+		t.Fatalf("session idle for 10 minutes = %d, want 200", w.Status)
 	}
 	if ago := lastSeenAgo(); ago > time.Minute {
 		t.Errorf("last_seen is %s old after a request, want it refreshed", ago)
@@ -242,7 +228,7 @@ func TestAdminSessionIdleLimitThroughTheRoutes(t *testing.T) {
 	// Idle for longer than the idle limit, well inside the 24 h absolute one.
 	setLastSeen(auth.IdleTimeout + time.Minute)
 	w := s.send(t, http.MethodGet, "/admin/events", nil, cookie)
-	if w.Code != http.StatusSeeOther || !strings.HasPrefix(w.Header().Get("Location"), "/admin/login") {
-		t.Errorf("session idle past the limit = %d to %q, want a redirect to sign in", w.Code, w.Header().Get("Location"))
+	if w.Status != http.StatusSeeOther || !strings.HasPrefix(w.Location(), "/admin/login") {
+		t.Errorf("session idle past the limit = %d to %q, want a redirect to sign in", w.Status, w.Location())
 	}
 }

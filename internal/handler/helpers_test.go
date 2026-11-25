@@ -19,13 +19,14 @@ import (
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/payment"
+	"github.com/17xande-dev/websec/webtest"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // newPublic mirrors how main.go mounts the server for an anonymous visitor:
 // security headers around everything, the public routes, and the first-party
 // group behind CSRF. templateDir is an override directory, "" for none.
-func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Server {
+func newPublic(t *testing.T, cfg config.Config, templateDir string) *testServer {
 	t.Helper()
 
 	pool := dbtest.Pool(t)
@@ -52,7 +53,7 @@ func newPublic(t *testing.T, cfg config.Config, templateDir string) *httptest.Se
 	srv.Start()
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	t.Cleanup(srv.Close)
-	return srv
+	return &testServer{srv, webtest.NewServer(t, srv)}
 }
 
 // ownOrigin makes the server's own listener address the site's BASE_URL, which

@@ -19,8 +19,8 @@ func loginAttempt(t *testing.T, s *app, email, password string, source int) *htt
 		"email": {email}, "password": {password},
 	})
 	r.RemoteAddr = fmt.Sprintf("192.0.2.%d:1234", source)
-	for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
-		r.AddCookie(c)
+	if token, ok := s.srv.browser.With(t).Cookie("csrf_token"); ok {
+		r.AddCookie(&http.Cookie{Name: "csrf_token", Value: token})
 	}
 	w := httptest.NewRecorder()
 	s.srv.Config.Handler.ServeHTTP(w, r)

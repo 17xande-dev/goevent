@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 // The route sweep and the role matrix both start from what RegisterAdmin
@@ -20,33 +21,20 @@ import (
 
 func TestAdminRoutes_EveryProtectedRouteRefusesAnonymous(t *testing.T) {
 	s := newApp(t)
-	routes := s.handler.AdminProtectedRoutes()
-
-	// A derived list that came back empty would let this pass while testing
-	// nothing at all. The number is a floor, not a count to keep updated.
-	if len(routes) < 25 {
-		t.Fatalf("AdminProtectedRoutes returned %d routes; the admin has more than that", len(routes))
+	var patterns []string
+	for _, route := range s.handler.AdminProtectedRoutes() {
+		patterns = append(patterns, route.Method+" "+route.Pattern)
 	}
-
-	for _, route := range routes {
-		path := route.TestPath()
-		var res *http.Response
-		if route.Method == http.MethodGet {
-			res, _ = get(t, s.srv, path)
-		} else {
-			// A real token, because nosurf's own 403 for a missing one looks
-			// exactly like a refusal to an assertion that only checks "not 200"
-			// — and would pass with the session check removed entirely.
-			res, _ = post(t, s.srv, path, url.Values{"title": {"Sneaky"}})
-		}
-		if res.StatusCode != http.StatusSeeOther {
-			t.Errorf("%s %s = %d, want 303", route.Method, path, res.StatusCode)
-			continue
-		}
-		if got := res.Header.Get("Location"); !strings.HasPrefix(got, "/admin/login") {
-			t.Errorf("%s %s redirected to %q, want the login form", route.Method, path, got)
-		}
-	}
+	webtest.Sweep{
+		Routes: webtest.Routes(t, patterns, map[string]string{
+			"id": "x", "ticketID": "x", "questionID": "x", "attendeeID": "x",
+		}),
+		Min:       25,
+		Client:    func() *webtest.Client { return webtest.NewServer(t, s.srv.Server, browserFormHeaders) },
+		TokenPage: "/admin/login", // Exercise the session check, not nosurf's own refusal.
+		Form:      url.Values{"title": {"Sneaky"}},
+		Refused:   webtest.RedirectsTo("/admin/login"),
+	}.Run(t)
 }
 
 // TestAdminRoutes_RolesGetTheirPermissions is the authorisation matrix: one

@@ -1,22 +1,21 @@
 package handler
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/ratelimit"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 func TestFailedLoginDoesNotLogSubmittedAddress(t *testing.T) {
 	s := newApp(t)
-	var logs bytes.Buffer
-	s.handler.log = slog.New(slog.NewJSONHandler(&logs, nil))
+	logger, logs := webtest.Logger(t)
+	s.handler.log = logger
 
 	check := func(email string) (string, string) {
 		t.Helper()
@@ -26,15 +25,11 @@ func TestFailedLoginDoesNotLogSubmittedAddress(t *testing.T) {
 			t.Fatalf("failed login: status %d, want 401", w.Code)
 		}
 		logged := logs.String()
-		for _, private := range []string{
+		webtest.NoSecrets(t, logged, "failed admin login",
 			email,
 			fmt.Sprintf("%x", sha256.Sum256([]byte(email))),
 			fmt.Sprintf("%x", sha256.Sum256([]byte(ratelimit.AccountKey(email)))),
-		} {
-			if strings.Contains(logged, private) {
-				t.Fatal("failed-login log contains submitted data")
-			}
-		}
+		)
 		if !strings.Contains(logged, `"client_ip":"192.0.2.1"`) {
 			t.Error("failed-login log lacks resolved client IP")
 		}

@@ -1,26 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/dbtest"
+	"github.com/17xande-dev/websec/webtest"
 )
 
-// captureLogger records what the boot path logged, because for the generated
-// token the log line *is* the delivery mechanism: an operator who cannot find it
-// cannot claim the site.
-func captureLogger() (*slog.Logger, *bytes.Buffer) {
-	var buf bytes.Buffer
-	return slog.New(slog.NewJSONHandler(&buf, nil)), &buf
-}
-
 // loggedToken pulls the setup_token attribute out of the captured JSON lines.
-func loggedToken(t *testing.T, buf *bytes.Buffer) string {
+// For generated tokens the boot log is the operator's delivery mechanism.
+func loggedToken(t *testing.T, buf *webtest.Logs) string {
 	t.Helper()
 
 	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
@@ -41,7 +33,7 @@ func loggedToken(t *testing.T, buf *bytes.Buffer) string {
 func TestEnsureSetupToken_GeneratesAndLogsOnAnEmptyStore(t *testing.T) {
 	users := auth.NewStore(dbtest.Pool(t))
 	ctx := t.Context()
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 
 	if err := ensureSetupToken(ctx, users, "", log); err != nil {
 		t.Fatalf("ensureSetupToken: %v", err)
@@ -65,7 +57,7 @@ func TestEnsureSetupToken_GeneratesAndLogsOnAnEmptyStore(t *testing.T) {
 func TestEnsureSetupToken_NeverLogsASuppliedToken(t *testing.T) {
 	users := auth.NewStore(dbtest.Pool(t))
 	ctx := t.Context()
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 	supplied := strings.Repeat("s", 43)
 
 	if err := ensureSetupToken(ctx, users, supplied, log); err != nil {
@@ -89,13 +81,13 @@ func TestEnsureSetupToken_KeepsAnUnclaimedToken(t *testing.T) {
 	users := auth.NewStore(dbtest.Pool(t))
 	ctx := t.Context()
 
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, "", log); err != nil {
 		t.Fatalf("first boot: %v", err)
 	}
 	first := loggedToken(t, buf)
 
-	log, buf = captureLogger()
+	log, buf = webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, "", log); err != nil {
 		t.Fatalf("second boot: %v", err)
 	}
@@ -123,11 +115,11 @@ func TestEnsureSetupToken_IssuesNothingOnAClaimedStore(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, "", log); err != nil {
 		t.Fatalf("ensureSetupToken: %v", err)
 	}
-	if buf.Len() != 0 {
+	if buf.String() != "" {
 		t.Errorf("a claimed site logged %s", buf.String())
 	}
 	if pending, err := users.SetupPending(ctx); err != nil || pending {
@@ -142,27 +134,22 @@ func TestEnsureSetupToken_SaysWhenASuppliedTokenIsIgnored(t *testing.T) {
 	users := auth.NewStore(dbtest.Pool(t))
 	ctx := t.Context()
 
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, "", log); err != nil {
 		t.Fatalf("first boot: %v", err)
 	}
 	generated := loggedToken(t, buf)
 
 	// The operator sets SETUP_TOKEN, or a deploy rotates it, and restarts.
-	log, buf = captureLogger()
+	log, buf = webtest.Logger(t)
 	supplied := strings.Repeat("s", 43)
 	if err := ensureSetupToken(ctx, users, supplied, log); err != nil {
 		t.Fatalf("second boot: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "does not match") {
-		t.Errorf("the log does not say the supplied token is ignored: %s", buf.String())
-	}
+	webtest.NoSecrets(t, buf.String(), "does not match", supplied, generated)
 	if strings.Contains(buf.String(), "look further back in this log") {
 		t.Error("the log points at an earlier line, which for a supplied token printed nothing")
-	}
-	if strings.Contains(buf.String(), supplied) {
-		t.Errorf("SETUP_TOKEN was written to the log: %s", buf.String())
 	}
 	// And the truth of it: the generated token still claims the site, the
 	// supplied one does not.
@@ -182,11 +169,11 @@ func TestEnsureSetupToken_QuietWhenASuppliedTokenIsAlreadyStored(t *testing.T) {
 	ctx := t.Context()
 	supplied := strings.Repeat("s", 43)
 
-	log, _ := captureLogger()
+	log, _ := webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, supplied, log); err != nil {
 		t.Fatalf("first boot: %v", err)
 	}
-	log, buf := captureLogger()
+	log, buf := webtest.Logger(t)
 	if err := ensureSetupToken(ctx, users, supplied, log); err != nil {
 		t.Fatalf("second boot: %v", err)
 	}

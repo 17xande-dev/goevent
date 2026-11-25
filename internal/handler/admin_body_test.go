@@ -8,16 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/blob"
+	"github.com/17xande-dev/websec/webtest"
 )
 
 type bodyProbe struct {
 	io.Reader
-	calls, bytes int
+	calls int
 }
 
 func (b *bodyProbe) Read(p []byte) (int, error) {
@@ -25,14 +25,11 @@ func (b *bodyProbe) Read(p []byte) (int, error) {
 	if b.Reader == nil {
 		return 0, errors.New("request body must not be read")
 	}
-	n, err := b.Reader.Read(p)
-	b.bytes += n
-	return n, err
+	return b.Reader.Read(p)
 }
 
 func TestLoginRejectsMultipartWithoutReading(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("TMPDIR", tmp)
+	checkTemp := webtest.NoTempFiles(t)
 	s := newApp(t)
 	body := &bodyProbe{}
 	r := httptest.NewRequest(http.MethodPost, s.srv.URL+"/admin/login", body)
@@ -40,12 +37,9 @@ func TestLoginRejectsMultipartWithoutReading(t *testing.T) {
 	r.Header.Set("Origin", s.srv.URL)
 	w := httptest.NewRecorder()
 	s.srv.Config.Handler.ServeHTTP(w, r)
-	entries, err := os.ReadDir(tmp)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.Code != http.StatusUnsupportedMediaType || body.calls != 0 || len(entries) != 0 {
-		t.Errorf("multipart login: status %d, reads %d, temp files %d; want 415, 0, 0", w.Code, body.calls, len(entries))
+	checkTemp()
+	if w.Code != http.StatusUnsupportedMediaType || body.calls != 0 {
+		t.Errorf("multipart login: status %d, reads %d; want 415, 0, 0", w.Code, body.calls)
 	}
 }
 
@@ -53,31 +47,32 @@ func TestLoginCapsDeclaredAndStreamedForms(t *testing.T) {
 	const limit = 256 << 10
 	s := newApp(t)
 	token := csrfToken(t, s.srv)
-	origin, err := url.Parse(s.srv.URL)
-	if err != nil {
-		t.Fatal(err)
+	tokenCookie, ok := s.srv.browser.With(t).Cookie(webtest.TokenField)
+	if !ok {
+		t.Fatal("login form did not set a CSRF cookie")
 	}
 	for _, declared := range []bool{true, false} {
-		body := &bodyProbe{Reader: strings.NewReader(url.Values{
+		form := url.Values{
 			"csrf_token": {token}, "email": {testEmail}, "password": {testPassword},
-		}.Encode() + "&padding=" + strings.Repeat("x", 8<<20))}
+		}
+		body := webtest.NewCountingReader(io.MultiReader(
+			strings.NewReader(form.Encode()+"&padding="), webtest.Filler(8<<20),
+		))
 		r := httptest.NewRequest(http.MethodPost, s.srv.URL+"/admin/login", body)
 		if declared {
 			r.ContentLength = limit + 1
 		}
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.Header.Set("Origin", s.srv.URL)
-		for _, cookie := range s.srv.Client().Jar.Cookies(origin) {
-			r.AddCookie(cookie)
-		}
+		r.AddCookie(&http.Cookie{Name: webtest.TokenField, Value: tokenCookie})
 		w := httptest.NewRecorder()
 		s.srv.Config.Handler.ServeHTTP(w, r)
-		maxRead := limit + (64 << 10)
+		maxRead := int64(limit + (64 << 10))
 		if declared {
 			maxRead = 0
 		}
-		if w.Code != http.StatusRequestEntityTooLarge || body.bytes > maxRead {
-			t.Errorf("declared=%t: status %d, read %d bytes; want 413, at most %d bytes", declared, w.Code, body.bytes, maxRead)
+		if w.Code != http.StatusRequestEntityTooLarge || body.N() > maxRead {
+			t.Errorf("declared=%t: status %d, read %d bytes; want 413, at most %d bytes", declared, w.Code, body.N(), maxRead)
 		}
 	}
 	if n, err := s.users.CountSessionsForUser(t.Context(), s.owner.ID); err != nil || n != 0 {
@@ -96,7 +91,8 @@ func TestEventImageBodyLimit(t *testing.T) {
 		t.Fatalf("upload at limit: status %d; want 303", res.StatusCode)
 	}
 	path := s.srv.URL + "/admin/events/" + e.ID + "/image"
-	token := csrfToken(t, s.srv)
+	form := csrfPage(t, s.srv)
+	token, signedInCookies := form.Page().Token(), form.Request.Cookies()
 	for _, tc := range []struct {
 		name   string
 		signed bool
@@ -121,7 +117,7 @@ func TestEventImageBodyLimit(t *testing.T) {
 			r.Header.Set("Content-Type", contentType)
 			r.Header.Set("Origin", tc.origin)
 			if tc.signed {
-				for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+				for _, c := range signedInCookies {
 					r.AddCookie(c)
 				}
 			}
@@ -178,8 +174,9 @@ func TestEventImageOversizedWithHeaderTokenIsRefused(t *testing.T) {
 	r.ContentLength = int64(data.Len())
 	r.Header.Set("Content-Type", contentType)
 	r.Header.Set("Origin", s.srv.URL)
-	r.Header.Set("X-CSRF-Token", csrfToken(t, s.srv))
-	for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+	form := csrfPage(t, s.srv)
+	r.Header.Set("X-CSRF-Token", form.Page().Token())
+	for _, c := range form.Request.Cookies() {
 		r.AddCookie(c)
 	}
 	w := httptest.NewRecorder()
@@ -196,6 +193,7 @@ func TestEventImageRouteCapsNonMultipartBodies(t *testing.T) {
 	s := setupApp(t)
 	e := createEvent(t, s, "Camp")
 	path := s.srv.URL + "/admin/events/" + e.ID + "/image"
+	signedInCookies := csrfPage(t, s.srv).Request.Cookies()
 	for _, ct := range []string{"application/x-www-form-urlencoded", "application/json", "text/plain"} {
 		t.Run(ct, func(t *testing.T) {
 			body := &bodyProbe{}
@@ -203,7 +201,7 @@ func TestEventImageRouteCapsNonMultipartBodies(t *testing.T) {
 			r.ContentLength = blob.MaxUploadBytes
 			r.Header.Set("Content-Type", ct)
 			r.Header.Set("Origin", s.srv.URL)
-			for _, c := range s.srv.Client().Jar.Cookies(r.URL) {
+			for _, c := range signedInCookies {
 				r.AddCookie(c)
 			}
 			w := httptest.NewRecorder()
