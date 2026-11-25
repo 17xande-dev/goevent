@@ -30,8 +30,10 @@ DATABASE_URL_FILE=/run/secrets/database_url
 
 That keeps the value out of the process environment, which `docker inspect` shows, and
 lets a deployment mount it as a Compose or Kubernetes secret. Setting both `KEY` and
-`KEY_FILE` is refused at boot, and so is a file that cannot be read. Trailing newlines are
-stripped, so a file written by `echo` or `pass show` works as it is.
+`KEY_FILE` is refused at boot. The file must be readable, regular, and at most 64 KiB.
+All trailing carriage returns (CR) and line feeds (LF) are stripped, so extra line
+endings do not become part of the secret. Everything else, including trailing spaces,
+is preserved. A file that is empty after stripping is refused.
 
 The keys that accept `_FILE` are `SECRET_KEY`, `DATABASE_URL`, `SETUP_TOKEN`,
 `PAYFAST_MERCHANT_KEY`, `PAYFAST_PASSPHRASE`, `SNAPSCAN_API_KEY`,

@@ -1204,25 +1204,36 @@ func TestLoad_SecretFileLimits(t *testing.T) {
 	}
 }
 
-func TestLoad_SecretStripsExactlyOneTrailingNewline(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"pw\n", "pw"},
-		{"pw\r\n", "pw"},
-		{"pw\n\n", "pw\n"},
-		{"pw\r\n\r\n", "pw\r\n"},
-		{"pw\r", "pw\r"},
-		{"pw ", "pw "},
-		{" pw\t\n", " pw\t"},
+func TestLoad_SecretStripsAllTrailingNewlines(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"LF", "pw\n", "pw"},
+		{"CRLF", "pw\r\n", "pw"},
+		{"double_LF", "pw\n\n", "pw"},
+		{"double_CRLF", "pw\r\n\r\n", "pw"},
+		{"LF_then_CR", "pw\n\r", "pw"},
+		{"CR", "pw\r", "pw"},
+		{"trailing_space_without_newline", "pw ", "pw "},
+		{"trailing_spaces_before_newlines", "pw  \r\n\n", "pw  "},
+		{"leading_space_and_trailing_tab", " pw\t\n", " pw\t"},
+		{"leading_newline", "\npw\r\n", "\npw"},
+		{"inner_newline", "p\nw\n", "p\nw"},
+		{"newlines_only", "\r\n\n\r", ""},
 	} {
-		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			setRequired(t)
 			t.Setenv("SMTP_PASSWORD_FILE", writeSecret(t, tc.in))
 			c, err := Load()
+			if tc.want == "" {
+				if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE: is empty") {
+					t.Errorf("want an empty SMTP_PASSWORD_FILE error, got %v", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			if c.SMTP.Password != tc.want {
-				t.Errorf("Password = %q, want %q", c.SMTP.Password, tc.want)
+				t.Error("SMTP password did not match the expected bytes")
 			}
 		})
 	}

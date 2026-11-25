@@ -940,11 +940,6 @@ const maxSecretFile = 64 << 10
 // most of these as `${KEY:-}`, i.e. present but empty, and that must not read as
 // a conflict with a KEY_FILE alongside it.
 //
-// Exactly one trailing newline (LF or CRLF) is stripped, and nothing else: `pass
-// show` and most editors end a file with one, and a shell's $(< file) drops it
-// the same way — the convention the official Postgres image's *_FILE variables
-// follow. A secret that ends in spaces or a second newline keeps them.
-//
 // Errors name KEY_FILE and never the path or the contents: a path variable
 // often gets a secret pasted into it by mistake, and the log is not the place
 // for either.
@@ -967,8 +962,9 @@ func loadSecrets(keys ...string) (secrets, error) {
 	return s, nil
 }
 
-// readSecretFile returns the file's contents minus one trailing newline. Its
-// errors carry no path: an *os.PathError is reduced to the underlying cause.
+// readSecretFile drops all trailing CR and LF bytes so extra line endings from
+// editors do not become part of the credential. Spaces and all other bytes are
+// kept. Its errors carry no path: an *os.PathError is reduced to its cause.
 func readSecretFile(path string) (string, error) {
 	// O_NONBLOCK so that opening a FIFO with no writer returns at once and the
 	// type check below can refuse it, rather than blocking startup forever. It has
@@ -998,12 +994,7 @@ func readSecretFile(path string) (string, error) {
 	if len(b) > maxSecretFile {
 		return "", fmt.Errorf("is larger than %d bytes", maxSecretFile)
 	}
-	v := string(b)
-	if t, ok := strings.CutSuffix(v, "\r\n"); ok {
-		v = t
-	} else if t, ok := strings.CutSuffix(v, "\n"); ok {
-		v = t
-	}
+	v := strings.TrimRight(string(b), "\r\n")
 	if v == "" {
 		return "", errors.New("is empty")
 	}
