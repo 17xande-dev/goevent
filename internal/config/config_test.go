@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"syscall"
@@ -697,23 +698,81 @@ func TestLoad_UnreadableSecretFileIsRefused(t *testing.T) {
 	}
 }
 
+// secretFields is the single list of credentials, keyed by environment name,
+// that TestLoad_EverySecretKeyAcceptsAFile exercises. A credential added to
+// the config must be added here; TestSecretKeysAreAllCovered fails until it is.
+var secretFields = map[string]func(Config) env.Secret{
+	"SECRET_KEY":                func(c Config) env.Secret { return c.SecretKey },
+	"DATABASE_URL":              func(c Config) env.Secret { return c.DatabaseURL },
+	"SETUP_TOKEN":               func(c Config) env.Secret { return c.SetupToken },
+	"PAYFAST_MERCHANT_KEY":      func(c Config) env.Secret { return c.PayFast.MerchantKey },
+	"PAYFAST_PASSPHRASE":        func(c Config) env.Secret { return c.PayFast.Passphrase },
+	"SNAPSCAN_API_KEY":          func(c Config) env.Secret { return c.SnapScan.APIKey },
+	"SNAPSCAN_WEBHOOK_AUTH_KEY": func(c Config) env.Secret { return c.SnapScan.WebhookAuthKey },
+	"SNAPSCAN_VALIDATION_KEY":   func(c Config) env.Secret { return c.SnapScan.ValidationKey },
+	"SMTP_PASSWORD":             func(c Config) env.Secret { return c.SMTP.Password },
+	"SMTP_OAUTH_CLIENT_SECRET":  func(c Config) env.Secret { return c.SMTP.OAuth.ClientSecret },
+	"GRAPH_CLIENT_SECRET":       func(c Config) env.Secret { return c.Graph.ClientSecret },
+	"BLOB_SECRET_ACCESS_KEY":    func(c Config) env.Secret { return c.Blob.SecretKey },
+}
+
+// TestSecretKeysAreAllCovered keeps secretFields complete in both directions:
+// every Secret key the package reads, and every env.Secret field on Config,
+// must be listed, and nothing may be listed that is not read.
+func TestSecretKeysAreAllCovered(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\.Secret\("([A-Z0-9_]+)"`)
+	read := map[string]bool{}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+			read[m[1]] = true
+		}
+	}
+	for key := range secretFields {
+		if !read[key] {
+			t.Errorf("secretFields lists %s but the config does not read it", key)
+		}
+		delete(read, key)
+	}
+	if len(read) > 0 {
+		t.Errorf("the config reads Secret keys that TestLoad_EverySecretKeyAcceptsAFile does not cover: %v", read)
+	}
+
+	// A Secret read through a variable key escapes the pattern above, so also
+	// count the fields.
+	if n := countSecretFields(reflect.TypeOf(Config{})); n != len(secretFields) {
+		t.Errorf("Config has %d env.Secret fields but secretFields lists %d", n, len(secretFields))
+	}
+}
+
+func countSecretFields(typ reflect.Type) int {
+	if typ == reflect.TypeOf(env.Secret{}) {
+		return 1
+	}
+	if typ.Kind() != reflect.Struct {
+		return 0
+	}
+	n := 0
+	for i := 0; i < typ.NumField(); i++ {
+		n += countSecretFields(typ.Field(i).Type)
+	}
+	return n
+}
+
 func TestLoad_EverySecretKeyAcceptsAFile(t *testing.T) {
 	// Verify that each file reaches the credential it belongs to, while the
 	// full config stays safe to print.
-	for key, field := range map[string]func(Config) env.Secret{
-		"SECRET_KEY":                func(c Config) env.Secret { return c.SecretKey },
-		"DATABASE_URL":              func(c Config) env.Secret { return c.DatabaseURL },
-		"SETUP_TOKEN":               func(c Config) env.Secret { return c.SetupToken },
-		"PAYFAST_MERCHANT_KEY":      func(c Config) env.Secret { return c.PayFast.MerchantKey },
-		"PAYFAST_PASSPHRASE":        func(c Config) env.Secret { return c.PayFast.Passphrase },
-		"SNAPSCAN_API_KEY":          func(c Config) env.Secret { return c.SnapScan.APIKey },
-		"SNAPSCAN_WEBHOOK_AUTH_KEY": func(c Config) env.Secret { return c.SnapScan.WebhookAuthKey },
-		"SNAPSCAN_VALIDATION_KEY":   func(c Config) env.Secret { return c.SnapScan.ValidationKey },
-		"SMTP_PASSWORD":             func(c Config) env.Secret { return c.SMTP.Password },
-		"SMTP_OAUTH_CLIENT_SECRET":  func(c Config) env.Secret { return c.SMTP.OAuth.ClientSecret },
-		"GRAPH_CLIENT_SECRET":       func(c Config) env.Secret { return c.Graph.ClientSecret },
-		"BLOB_SECRET_ACCESS_KEY":    func(c Config) env.Secret { return c.Blob.SecretKey },
-	} {
+	for key, field := range secretFields {
 		t.Run(key, func(t *testing.T) {
 			setRequired(t)
 			// Features whose credentials are only read when the feature is on.
