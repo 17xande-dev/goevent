@@ -6,18 +6,15 @@ package config
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
+	"github.com/17xande-dev/env"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/ratelimit/clientip"
 	"github.com/17xande-dev/websec/csrf"
@@ -31,7 +28,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 
 	// Storage
-	DatabaseURL string
+	DatabaseURL env.Secret
 
 	// Site presentation. No organisation-specific defaults live in the code;
 	// adopters set these.
@@ -68,7 +65,7 @@ type Config struct {
 	// line and paste it into a form. Empty is the ordinary case: the server
 	// generates one on first boot against an empty admin_users and prints it.
 	// Either way it is stored only as a hash and is spent by the first claim.
-	SetupToken string
+	SetupToken env.Secret
 
 	// PayFast and SnapScan are the payment gateways' configuration. They are flat
 	// structs here rather than the gateway packages' own Configs so that config
@@ -100,7 +97,7 @@ type Config struct {
 	// links and ticket codes. Changing it invalidates every link and ticket
 	// already sent and strands any queued email, so keep it — and back it up
 	// with the database.
-	SecretKey string
+	SecretKey env.Secret
 
 	// Blob is object storage for event images.
 	Blob Blob
@@ -216,8 +213,8 @@ const payFastSandboxMerchantID = "10000100"
 // localhost.
 type PayFast struct {
 	MerchantID  string
-	MerchantKey string
-	Passphrase  string
+	MerchantKey env.Secret
+	Passphrase  env.Secret
 	Sandbox     bool
 
 	NotifyURL string
@@ -254,15 +251,15 @@ type SnapScan struct {
 	SnapCode string
 	// APIKey reads payments back from SnapScan's merchant API, which is how a
 	// notification is confirmed.
-	APIKey string
+	APIKey env.Secret
 	// WebhookAuthKey is the shared secret a notification's HMAC is computed with.
 	// Required whenever the gateway is enabled: without it, nothing about a
 	// notification can be checked, and the callback route is the one thing that
 	// can mark a registration paid.
-	WebhookAuthKey string
+	WebhookAuthKey env.Secret
 	// ValidationKey enables the Secure QR Payload signature, which SnapScan
 	// switches on per account on request. Optional — see snapscan.Config.
-	ValidationKey string
+	ValidationKey env.Secret
 }
 
 // Configured reports whether SnapScan is switched on.
@@ -279,7 +276,7 @@ type Blob struct {
 	Endpoint  string
 	Bucket    string
 	AccessKey string
-	SecretKey string
+	SecretKey env.Secret
 
 	// Region is "auto" for R2. GCS and RustFS ignore it.
 	Region string
@@ -343,7 +340,7 @@ type SMTP struct {
 	Host     string
 	Port     int
 	Username string
-	Password string
+	Password env.Secret
 
 	// From is the sender address. A relay usually rejects a From it does not
 	// consider itself responsible for, so this has to be on a domain it accepts.
@@ -365,12 +362,12 @@ type SMTP struct {
 type SMTPOAuth struct {
 	TenantID     string
 	ClientID     string
-	ClientSecret string
+	ClientSecret env.Secret
 }
 
 // Configured reports whether a token can be obtained.
 func (o SMTPOAuth) Configured() bool {
-	return o.TenantID != "" && o.ClientID != "" && o.ClientSecret != ""
+	return o.TenantID != "" && o.ClientID != "" && o.ClientSecret.IsSet()
 }
 
 // Configured reports whether mail can actually be sent. Both a host and a From
@@ -385,7 +382,7 @@ func (s SMTP) Configured() bool { return s.Host != "" && s.From != "" }
 type Graph struct {
 	TenantID     string
 	ClientID     string
-	ClientSecret string
+	ClientSecret env.Secret
 	// From is the mailbox to send as. Kept separate from SMTP.From rather than
 	// shared, since a deployment choosing Graph has no reason to have set SMTP
 	// up at all.
@@ -396,142 +393,124 @@ type Graph struct {
 // three for the token and From for the mailbox, and half-configured is the case
 // worth catching at startup rather than at the first registration.
 func (g Graph) Configured() bool {
-	return g.TenantID != "" && g.ClientID != "" && g.ClientSecret != "" && g.From != ""
+	return g.TenantID != "" && g.ClientID != "" && g.ClientSecret.IsSet() && g.From != ""
 }
 
 // AllowsEmbedding reports whether any other origin may frame the public event pages.
 func (c Config) AllowsEmbedding() bool { return len(c.EmbedOrigins) > 0 }
 
+// SetupTokenValue returns the token as the setup flow has always accepted it:
+// surrounding whitespace is ignored. The config field itself stays redacted.
+func (c Config) SetupTokenValue() string { return strings.TrimSpace(c.SetupToken.Reveal()) }
+
 // Load reads configuration from the environment, applying defaults and
 // returning an error listing every missing or malformed required value.
-func Load() (Config, error) {
-	sec, err := loadSecrets(secretKeys...)
-	if err != nil {
-		return Config{}, err
-	}
-	// Booleans are read up front so that every bad one is reported, and before
-	// anything is built from them: a typo must stop startup, not pick a side.
-	var flagErrs []error
-	flag := func(key string, def bool) bool {
-		v, err := boolEnv(key, def)
-		if err != nil {
-			flagErrs = append(flagErrs, err)
-		}
-		return v
-	}
-	themeReload := flag("THEME_RELOAD", false)
-	blobUseTLS := flag("BLOB_USE_TLS", true)
-	// Sandbox defaults to true: the wrong default here takes real money from a
-	// real card during somebody's first afternoon with the project.
-	//
-	// The cost of that default is the mirror failure — a production deployment
-	// that never sets it takes no money and looks fine — so anything that deploys
-	// this is expected to set it explicitly, and the Compose files in deploy/
-	// require it. See the check further down for the half-done version of
-	// turning it off.
-	payfastSandbox := flag("PAYFAST_SANDBOX", true)
-	if len(flagErrs) > 0 {
-		return Config{}, errors.Join(flagErrs...)
-	}
+func Load() (Config, error) { return load(os.LookupEnv) }
+
+func load(lookup env.Lookup) (Config, error) {
+	r := env.New(lookup)
+	from := strings.TrimSpace(r.String("EMAIL_FROM", ""))
+	// Resolve credentials before validation so a file error is diagnosed even
+	// when other settings are malformed.
 	c := Config{
-		Port:            env("PORT", "8080"),
-		BaseURL:         strings.TrimRight(env("BASE_URL", "http://localhost:8080"), "/"),
-		DatabaseURL:     sec.get("DATABASE_URL"),
-		SiteName:        env("SITE_NAME", "goevent"),
-		Currency:        env("CURRENCY", "ZAR"),
-		TemplateDir:     os.Getenv("TEMPLATE_DIR"),
-		StaticDir:       strings.TrimSpace(os.Getenv("STATIC_DIR")),
-		ThemeReload:     themeReload,
-		LogLevel:        env("LOG_LEVEL", "info"),
-		LogFormat:       env("LOG_FORMAT", "json"),
-		SetupToken:      strings.TrimSpace(sec.get("SETUP_TOKEN")),
-		SessionTTL:      24 * time.Hour,
-		ShutdownTimeout: 15 * time.Second,
-		RateLimits: RateLimits{
-			LoginPerMinute:    10,
-			CheckoutPerMinute: 20,
-			CallbackPerMinute: 120,
-			StatusPerMinute:   30,
-		},
-		NotifyEmail: strings.TrimSpace(os.Getenv("NOTIFY_EMAIL")),
-		SecretKey:   strings.TrimSpace(sec.get("SECRET_KEY")),
-		ImageDir:    strings.TrimSpace(os.Getenv("IMAGE_DIR")),
+		Port:        r.String("PORT", "8080"),
+		BaseURL:     strings.TrimRight(r.String("BASE_URL", "http://localhost:8080"), "/"),
+		DatabaseURL: r.Secret("DATABASE_URL"),
+		SiteName:    r.String("SITE_NAME", "goevent"),
+		Currency:    r.String("CURRENCY", "ZAR"),
+		TemplateDir: r.String("TEMPLATE_DIR", ""),
+		StaticDir:   strings.TrimSpace(r.String("STATIC_DIR", "")),
+		SetupToken:  r.Secret("SETUP_TOKEN"),
+		NotifyEmail: strings.TrimSpace(r.String("NOTIFY_EMAIL", "")),
+		SecretKey:   r.Secret("SECRET_KEY"),
+		ImageDir:    strings.TrimSpace(r.String("IMAGE_DIR", "")),
 		Blob: Blob{
-			Endpoint:      strings.TrimSpace(os.Getenv("BLOB_ENDPOINT")),
-			Bucket:        strings.TrimSpace(os.Getenv("BLOB_BUCKET")),
-			AccessKey:     os.Getenv("BLOB_ACCESS_KEY_ID"),
-			SecretKey:     sec.get("BLOB_SECRET_ACCESS_KEY"),
-			Region:        env("BLOB_REGION", "auto"),
-			UseTLS:        blobUseTLS,
-			PublicBaseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("BLOB_PUBLIC_BASE_URL")), "/"),
+			Endpoint:      strings.TrimSpace(r.String("BLOB_ENDPOINT", "")),
+			Bucket:        strings.TrimSpace(r.String("BLOB_BUCKET", "")),
+			AccessKey:     r.String("BLOB_ACCESS_KEY_ID", ""),
+			SecretKey:     r.Secret("BLOB_SECRET_ACCESS_KEY"),
+			Region:        r.String("BLOB_REGION", "auto"),
+			PublicBaseURL: strings.TrimRight(strings.TrimSpace(r.String("BLOB_PUBLIC_BASE_URL", "")), "/"),
 		},
 		SMTP: SMTP{
-			Host:     strings.TrimSpace(os.Getenv("SMTP_HOST")),
-			Username: os.Getenv("SMTP_USERNAME"),
-			Password: sec.get("SMTP_PASSWORD"),
-			From:     strings.TrimSpace(os.Getenv("EMAIL_FROM")),
-			ReplyTo:  strings.TrimSpace(os.Getenv("EMAIL_REPLY_TO")),
-			TLS:      env("SMTP_TLS", "starttls"),
+			Host:     strings.TrimSpace(r.String("SMTP_HOST", "")),
+			Username: r.String("SMTP_USERNAME", ""),
+			Password: r.Secret("SMTP_PASSWORD"),
+			From:     from,
+			ReplyTo:  strings.TrimSpace(r.String("EMAIL_REPLY_TO", "")),
+			TLS:      r.String("SMTP_TLS", "starttls"),
 			OAuth: SMTPOAuth{
-				TenantID:     strings.TrimSpace(os.Getenv("SMTP_OAUTH_TENANT_ID")),
-				ClientID:     strings.TrimSpace(os.Getenv("SMTP_OAUTH_CLIENT_ID")),
-				ClientSecret: sec.get("SMTP_OAUTH_CLIENT_SECRET"),
+				TenantID:     strings.TrimSpace(r.String("SMTP_OAUTH_TENANT_ID", "")),
+				ClientID:     strings.TrimSpace(r.String("SMTP_OAUTH_CLIENT_ID", "")),
+				ClientSecret: r.Secret("SMTP_OAUTH_CLIENT_SECRET"),
 			},
 		},
 		Graph: Graph{
-			TenantID:     strings.TrimSpace(os.Getenv("GRAPH_TENANT_ID")),
-			ClientID:     strings.TrimSpace(os.Getenv("GRAPH_CLIENT_ID")),
-			ClientSecret: sec.get("GRAPH_CLIENT_SECRET"),
-			From:         strings.TrimSpace(os.Getenv("EMAIL_FROM")),
+			TenantID:     strings.TrimSpace(r.String("GRAPH_TENANT_ID", "")),
+			ClientID:     strings.TrimSpace(r.String("GRAPH_CLIENT_ID", "")),
+			ClientSecret: r.Secret("GRAPH_CLIENT_SECRET"),
+			From:         from,
 		},
 		PayFast: PayFast{
-			MerchantID:  os.Getenv("PAYFAST_MERCHANT_ID"),
-			MerchantKey: sec.get("PAYFAST_MERCHANT_KEY"),
-			Passphrase:  sec.get("PAYFAST_PASSPHRASE"),
-			Sandbox:     payfastSandbox,
-			NotifyURL:   strings.TrimSpace(os.Getenv("PAYFAST_NOTIFY_URL")),
+			MerchantID:  r.String("PAYFAST_MERCHANT_ID", ""),
+			MerchantKey: r.Secret("PAYFAST_MERCHANT_KEY"),
+			Passphrase:  r.Secret("PAYFAST_PASSPHRASE"),
+			NotifyURL:   strings.TrimSpace(r.String("PAYFAST_NOTIFY_URL", "")),
 		},
 		SnapScan: SnapScan{
-			SnapCode:       strings.TrimSpace(os.Getenv("SNAPSCAN_SNAP_CODE")),
-			APIKey:         strings.TrimSpace(sec.get("SNAPSCAN_API_KEY")),
-			WebhookAuthKey: strings.TrimSpace(sec.get("SNAPSCAN_WEBHOOK_AUTH_KEY")),
-			ValidationKey:  strings.TrimSpace(sec.get("SNAPSCAN_VALIDATION_KEY")),
+			SnapCode:       strings.TrimSpace(r.String("SNAPSCAN_SNAP_CODE", "")),
+			APIKey:         r.Secret("SNAPSCAN_API_KEY"),
+			WebhookAuthKey: r.Secret("SNAPSCAN_WEBHOOK_AUTH_KEY"),
+			ValidationKey:  r.Secret("SNAPSCAN_VALIDATION_KEY"),
 		},
 	}
+	c.ThemeReload = r.Bool("THEME_RELOAD", false)
+	c.Blob.UseTLS = r.Bool("BLOB_USE_TLS", true)
+	// Default to sandbox so a fresh install cannot take real money by accident.
+	c.PayFast.Sandbox = r.Bool("PAYFAST_SANDBOX", true)
+	c.LogLevel = r.OneOf("LOG_LEVEL", "info", "debug", "info", "warn", "error")
+	c.LogFormat = r.OneOf("LOG_FORMAT", "json", "json", "gcp")
+	c.SessionTTL = time.Duration(r.Int("SESSION_TTL_HOURS", 24, 1, math.MaxInt)) * time.Hour
+	c.ShutdownTimeout = time.Duration(r.Int("SHUTDOWN_TIMEOUT_SECONDS", 15, 0, math.MaxInt)) * time.Second
+	// Only an explicit zero switches a limit off.
+	c.RateLimits = RateLimits{
+		LoginPerMinute:    r.Int("RATE_LIMIT_LOGIN_PER_MINUTE", 10, 0, math.MaxInt),
+		CheckoutPerMinute: r.Int("RATE_LIMIT_CHECKOUT_PER_MINUTE", 20, 0, math.MaxInt),
+		CallbackPerMinute: r.Int("RATE_LIMIT_CALLBACK_PER_MINUTE", 120, 0, math.MaxInt),
+		StatusPerMinute:   r.Int("RATE_LIMIT_STATUS_PER_MINUTE", 30, 0, math.MaxInt),
+	}
+	c.SMTP.Port = r.Int("SMTP_PORT", 587, 1, 65535)
 	c.CookieSecure = strings.HasPrefix(c.BaseURL, "https://")
 	// One signal, three uses: Secure cookies, HSTS, and whether an error page may
 	// say what actually went wrong.
 	c.ShowErrorDetail = !c.CookieSecure
 
-	var missing []string
-	if c.DatabaseURL == "" {
-		missing = append(missing, "DATABASE_URL")
+	if !c.DatabaseURL.IsSet() {
+		r.Fail("DATABASE_URL", "is required (or set DATABASE_URL_FILE)")
 	}
-	if c.SecretKey == "" {
-		missing = append(missing, "SECRET_KEY")
+	// These settings historically trimmed whitespace on top of the file
+	// reader's CR/LF stripping. Keep that normalization at validation and use.
+	if secretKey := strings.TrimSpace(c.SecretKey.Reveal()); secretKey == "" {
+		r.Fail("SECRET_KEY", "is required (or set SECRET_KEY_FILE)")
+	} else if key, err := hex.DecodeString(secretKey); err != nil || len(key) != 32 {
+		r.Fail("SECRET_KEY", "must be 64 hexadecimal characters; generate with openssl rand -hex 32")
 	}
 	// Each gateway's credentials are required only when that gateway is switched
 	// on, so a SnapScan-only store needs no PayFast account and the reverse.
-	if c.PayFast.Configured() && c.PayFast.MerchantKey == "" {
-		missing = append(missing, "PAYFAST_MERCHANT_KEY")
+	if c.PayFast.Configured() && !c.PayFast.MerchantKey.IsSet() {
+		r.Fail("PAYFAST_MERCHANT_KEY", "is required when PAYFAST_MERCHANT_ID is set")
 	}
 	if c.SnapScan.Configured() {
-		if c.SnapScan.APIKey == "" {
-			missing = append(missing, "SNAPSCAN_API_KEY")
+		if strings.TrimSpace(c.SnapScan.APIKey.Reveal()) == "" {
+			r.Fail("SNAPSCAN_API_KEY", "is required when SNAPSCAN_SNAP_CODE is set")
 		}
 		// Not optional. A notification with nothing to check its signature
 		// against is an unauthenticated request that can mark registrations paid, and
 		// the callback route is unauthenticated by definition — a payment
 		// provider cannot be given a session or a CSRF token.
-		if c.SnapScan.WebhookAuthKey == "" {
-			missing = append(missing, "SNAPSCAN_WEBHOOK_AUTH_KEY")
+		if strings.TrimSpace(c.SnapScan.WebhookAuthKey.Reveal()) == "" {
+			r.Fail("SNAPSCAN_WEBHOOK_AUTH_KEY", "is required when SNAPSCAN_SNAP_CODE is set")
 		}
-	}
-	if len(missing) > 0 {
-		return Config{}, fmt.Errorf("config: required env vars not set: %s", strings.Join(missing, ", "))
-	}
-	if key, err := hex.DecodeString(c.SecretKey); err != nil || len(key) != 32 {
-		return Config{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters; generate with openssl rand -hex 32")
 	}
 
 	// BASE_URL is also the site's own origin for the CSRF check, which compares it
@@ -539,8 +518,7 @@ func Load() (Config, error) {
 	// never send (a path, upper case, a default port) would make every form fail
 	// as cross-origin, so it stops startup here, where -check-config reports it.
 	if err := csrf.ValidateOrigin(c.BaseURL, !c.CookieSecure); err != nil {
-		return Config{}, fmt.Errorf("config: BASE_URL %q cannot be the site's origin: %w "+
-			"(want lower-case scheme://host[:port] with no path)", c.BaseURL, err)
+		r.Fail("BASE_URL", "cannot be the site's origin; want lower-case scheme://host[:port] with no path")
 	}
 
 	// There is no admin credential in the environment any more: accounts live in
@@ -548,32 +526,8 @@ func Load() (Config, error) {
 	// supplied is the token that authorises that claim, and a short one is a
 	// guessable credential for the whole admin area — so it is bounded here,
 	// where the message can say so, rather than accepted and regretted.
-	if c.SetupToken != "" && len(c.SetupToken) < MinSetupTokenLen {
-		return Config{}, fmt.Errorf("config: SETUP_TOKEN is %d characters, want at least %d "+
-			"(generate one with `openssl rand -base64 32`)", len(c.SetupToken), MinSetupTokenLen)
-	}
-
-	if h, ok := os.LookupEnv("SESSION_TTL_HOURS"); ok {
-		n, err := strconv.Atoi(h)
-		if err != nil || n <= 0 {
-			return Config{}, fmt.Errorf("config: SESSION_TTL_HOURS must be a positive integer, got %q", h)
-		}
-		c.SessionTTL = time.Duration(n) * time.Hour
-	}
-
-	if d, ok := os.LookupEnv("SHUTDOWN_TIMEOUT_SECONDS"); ok {
-		n, err := strconv.Atoi(d)
-		if err != nil || n < 0 {
-			return Config{}, fmt.Errorf("config: SHUTDOWN_TIMEOUT_SECONDS must be a non-negative integer, got %q", d)
-		}
-		c.ShutdownTimeout = time.Duration(n) * time.Second
-	}
-
-	if err := checkLogLevel(c.LogLevel); err != nil {
-		return Config{}, err
-	}
-	if err := checkLogFormat(c.LogFormat); err != nil {
-		return Config{}, err
+	if token := c.SetupTokenValue(); token != "" && len(token) < MinSetupTokenLen {
+		r.Fail("SETUP_TOKEN", fmt.Sprintf("want at least %d characters (generate one with `openssl rand -base64 32`)", MinSetupTokenLen))
 	}
 
 	// TRUST_PROXY_IP was a bool meaning "believe X-Forwarded-For". It cannot
@@ -586,14 +540,13 @@ func Load() (Config, error) {
 	// payment callback's source-IP check would reject every genuine
 	// notification. Both fail quietly, which is what a boot refusal is for.
 	if _, ok := os.LookupEnv("TRUST_PROXY_IP"); ok {
-		return Config{}, errors.New(
-			"config: TRUST_PROXY_IP has been replaced by CLIENT_IP_SOURCE — " +
-				"use CLIENT_IP_SOURCE=forwarded for what TRUST_PROXY_IP=true did, " +
-				"CLIENT_IP_SOURCE=cloudflare behind Cloudflare, or unset it for remote")
+		r.Fail("TRUST_PROXY_IP", "has been replaced by CLIENT_IP_SOURCE — "+
+			"use CLIENT_IP_SOURCE=forwarded for what TRUST_PROXY_IP=true did, "+
+			"CLIENT_IP_SOURCE=cloudflare behind Cloudflare, or unset it for remote")
 	}
-	clientIPSource, sourceErr := clientip.ParseSource(env("CLIENT_IP_SOURCE", "remote"))
+	clientIPSource, sourceErr := clientip.ParseSource(r.String("CLIENT_IP_SOURCE", "remote"))
 	if sourceErr != nil {
-		return Config{}, fmt.Errorf("config: CLIENT_IP_SOURCE: %w", sourceErr)
+		r.Fail("CLIENT_IP_SOURCE", "must be remote, forwarded, or cloudflare")
 	}
 	c.ClientIPSource = clientIPSource
 
@@ -607,86 +560,41 @@ func Load() (Config, error) {
 	// Refused at boot, where it costs one message, rather than at the first
 	// checkout, where it costs a registrant.
 	if c.PayFast.Configured() && !c.PayFast.Sandbox && c.PayFast.MerchantID == payFastSandboxMerchantID {
-		return Config{}, fmt.Errorf(
-			"config: PAYFAST_SANDBOX is false but PAYFAST_MERCHANT_ID is still %s, "+
-				"which is PayFast's published sandbox merchant id — set your own "+
-				"credentials, or leave PAYFAST_SANDBOX=true", payFastSandboxMerchantID)
+		r.Fail("PAYFAST_SANDBOX", "cannot be false with PAYFAST_MERCHANT_ID set to PayFast's published sandbox merchant id — "+
+			"set your own credentials, or leave PAYFAST_SANDBOX=true")
 	}
 
 	// "*" is allowed here and nowhere else: the fragments these origins may fetch
 	// are cookie-free and read-only, so a permissive list cannot become a way to
 	// act as somebody.
-	c.EmbedOrigins, err = parseOrigins("EMBED_ORIGINS", true)
-	if err != nil {
-		return Config{}, err
-	}
+	c.EmbedOrigins = parseOrigins(r, "EMBED_ORIGINS", true)
 
 	// Whereas a wildcard font source would let any origin serve a stylesheet to
 	// every page of the site, the checkout included — the opposite of what this
 	// directive is for. So: list them.
-	c.FontOrigins, err = parseOrigins("FONT_ORIGINS", false)
-	if err != nil {
-		return Config{}, err
-	}
+	c.FontOrigins = parseOrigins(r, "FONT_ORIGINS", false)
 
-	if c.FontCSSURL = strings.TrimSpace(os.Getenv("FONT_CSS_URL")); c.FontCSSURL != "" {
+	if c.FontCSSURL = strings.TrimSpace(r.String("FONT_CSS_URL", "")); c.FontCSSURL != "" {
 		u, err := url.Parse(c.FontCSSURL)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return Config{}, fmt.Errorf("config: FONT_CSS_URL %q must be an absolute URL", c.FontCSSURL)
-		}
-		// The stylesheet's own origin has to be allowed to serve it. Refused at boot
-		// rather than in the browser, where the only symptom is a console warning and
-		// a page rendered in the fallback font.
-		origin := u.Scheme + "://" + u.Host
-		if !slices.Contains(c.FontOrigins, origin) {
-			return Config{}, fmt.Errorf(
-				"config: FONT_CSS_URL is on %s, which FONT_ORIGINS does not list — "+
-					"the CSP would block the stylesheet; add %s to FONT_ORIGINS", origin, origin)
-		}
-	}
-
-	// The limits are configurable because the right number depends on a site's
-	// traffic, and 0 means "no limit on this surface" — spelled out rather than
-	// implied by an empty value, since switching a protection off should be
-	// something an operator typed.
-	for _, l := range []struct {
-		key string
-		dst *int
-	}{
-		{"RATE_LIMIT_LOGIN_PER_MINUTE", &c.RateLimits.LoginPerMinute},
-		{"RATE_LIMIT_CHECKOUT_PER_MINUTE", &c.RateLimits.CheckoutPerMinute},
-		{"RATE_LIMIT_CALLBACK_PER_MINUTE", &c.RateLimits.CallbackPerMinute},
-		{"RATE_LIMIT_STATUS_PER_MINUTE", &c.RateLimits.StatusPerMinute},
-	} {
-		if v, ok := os.LookupEnv(l.key); ok {
-			n, err := strconv.Atoi(v)
-			if err != nil || n < 0 {
-				return Config{}, fmt.Errorf("config: %s must be a non-negative integer, got %q", l.key, v)
-			}
-			*l.dst = n
+			r.Fail("FONT_CSS_URL", "must be an absolute URL")
+		} else if !slices.Contains(c.FontOrigins, u.Scheme+"://"+u.Host) {
+			// The browser would block the stylesheet and only show a console warning.
+			r.Fail("FONT_CSS_URL", "its origin must be listed in FONT_ORIGINS or the CSP will block it")
 		}
 	}
 
 	// Mail is validated whenever any of it is set, so a half-configured relay is a
 	// boot failure rather than a receipt that silently never arrives.
-	c.SMTP.Port = 587
-	if p, ok := os.LookupEnv("SMTP_PORT"); ok {
-		n, err := strconv.Atoi(p)
-		if err != nil || n <= 0 || n > 65535 {
-			return Config{}, fmt.Errorf("config: SMTP_PORT must be a port number, got %q", p)
-		}
-		c.SMTP.Port = n
-	}
 	if _, err := mailer.ParseTLSPolicy(c.SMTP.TLS); err != nil {
-		return Config{}, fmt.Errorf("config: SMTP_TLS: %w", err)
+		r.Fail("SMTP_TLS", "must be starttls, tls, or none")
 	}
 	// From set without Host is not an error on its own: it is what a Graph-only
 	// deployment looks like, since EMAIL_FROM serves both transports. Host
 	// without From is still a mistake — a relay with no sender is not a working
 	// configuration.
 	if c.SMTP.Host != "" && c.SMTP.From == "" {
-		return Config{}, fmt.Errorf(
-			"config: EMAIL_FROM is required when SMTP_HOST is set")
+		r.Fail("EMAIL_FROM", "is required when SMTP_HOST is set")
 	}
 	// Graph is all or nothing, for the same reason XOAUTH2 is below: a
 	// half-configured app registration would boot, then fail to send on the
@@ -694,10 +602,9 @@ func Load() (Config, error) {
 	// deployment that got partway through setting Graph up gets the specific
 	// error rather than the generic "nothing is configured" one.
 	graph := c.Graph
-	if !graph.Configured() && (graph.TenantID != "" || graph.ClientID != "" || graph.ClientSecret != "") {
-		return Config{}, fmt.Errorf(
-			"config: GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and EMAIL_FROM " +
-				"must all be set to send through Graph")
+	if !graph.Configured() && (graph.TenantID != "" || graph.ClientID != "" || graph.ClientSecret.IsSet()) {
+		r.Fail("GRAPH_CLIENT_SECRET", "GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET and EMAIL_FROM "+
+			"must all be set to send through Graph")
 	}
 
 	// Mail is REQUIRED. The confirmation email is the only place a registrant is
@@ -706,49 +613,43 @@ func Load() (Config, error) {
 	// tickets nobody can then present at the door. Graph satisfies it just as
 	// SMTP does.
 	if !c.SMTP.Configured() && !c.Graph.Configured() {
-		return Config{}, fmt.Errorf(
-			"config: SMTP_HOST and EMAIL_FROM (or GRAPH_TENANT_ID, GRAPH_CLIENT_ID, " +
-				"GRAPH_CLIENT_SECRET and EMAIL_FROM) are required — a confirmation carries " +
-				"the attendee's tickets, which exist nowhere else")
+		r.Fail("SMTP_HOST", "SMTP_HOST and EMAIL_FROM (or GRAPH_TENANT_ID, GRAPH_CLIENT_ID, "+
+			"GRAPH_CLIENT_SECRET and EMAIL_FROM) are required — a confirmation carries "+
+			"the attendee's tickets, which exist nowhere else")
 	}
 	if c.NotifyEmail != "" && !c.SMTP.Configured() && !c.Graph.Configured() {
-		return Config{}, fmt.Errorf(
-			"config: NOTIFY_EMAIL is set but no mail transport is configured, " +
-				"so the notification could never be sent")
+		r.Fail("NOTIFY_EMAIL", "is set but no mail transport is configured, "+
+			"so the notification could never be sent")
 	}
 
 	// XOAUTH2 is all or nothing. A half-configured app registration would boot,
 	// then fail to authenticate against Exchange on the first registration — which
 	// is the worst possible moment to discover a missing environment variable.
 	oauth := c.SMTP.OAuth
-	if !oauth.Configured() && (oauth.TenantID != "" || oauth.ClientID != "" || oauth.ClientSecret != "") {
-		return Config{}, fmt.Errorf(
-			"config: SMTP_OAUTH_TENANT_ID, SMTP_OAUTH_CLIENT_ID and SMTP_OAUTH_CLIENT_SECRET " +
-				"must be set together")
+	if !oauth.Configured() && (oauth.TenantID != "" || oauth.ClientID != "" || oauth.ClientSecret.IsSet()) {
+		r.Fail("SMTP_OAUTH_CLIENT_SECRET", "SMTP_OAUTH_TENANT_ID, SMTP_OAUTH_CLIENT_ID and SMTP_OAUTH_CLIENT_SECRET "+
+			"must be set together")
 	}
 	if oauth.Configured() {
 		// XOAUTH2 authenticates as a named mailbox, so the username is not
 		// optional the way it is for a relay that authenticates by address.
 		if c.SMTP.Username == "" {
-			return Config{}, fmt.Errorf(
-				"config: SMTP_USERNAME is required with SMTP OAuth — XOAUTH2 authenticates " +
-					"as a named mailbox")
+			r.Fail("SMTP_USERNAME", "is required with SMTP OAuth — XOAUTH2 authenticates "+
+				"as a named mailbox")
 		}
 		// Refused rather than resolved by precedence. Both being set means
 		// somebody has a belief about which one is in use, and a silent winner
 		// would leave a stale secret sitting in the environment looking live.
-		if c.SMTP.Password != "" {
-			return Config{}, fmt.Errorf(
-				"config: SMTP_PASSWORD and SMTP OAuth are both set, so which one authenticates " +
-					"would be a guess; unset SMTP_PASSWORD")
+		if c.SMTP.Password.IsSet() {
+			r.Fail("SMTP_PASSWORD", "SMTP_PASSWORD and SMTP OAuth are both set, so which one authenticates "+
+				"would be a guess; unset SMTP_PASSWORD")
 		}
 	}
 
 	// One image backend at most. Both configured would leave which one wins to be
 	// guessed, and the guess would be wrong half the time.
 	if c.Blob.Configured() && c.ImageDir != "" {
-		return Config{}, fmt.Errorf(
-			"config: BLOB_ENDPOINT and IMAGE_DIR are both set; event images come from one or the other")
+		r.Fail("BLOB_ENDPOINT", "BLOB_ENDPOINT and IMAGE_DIR are both set; event images come from one or the other")
 	}
 	// And at least one. Otherwise the admin's upload form has to either exist or
 	// explain itself on every event page — a half-feature carried by every
@@ -758,48 +659,38 @@ func Load() (Config, error) {
 	// Refusing to boot over a setting that cheap costs an adopter a line of config
 	// and saves them a public site that looks broken.
 	if !c.ImagesEnabled() {
-		return Config{}, fmt.Errorf(
-			"config: event images are required — set IMAGE_DIR for a local directory, " +
-				"or the BLOB_* variables for object storage")
+		r.Fail("IMAGE_DIR", "event images are required — set IMAGE_DIR for a local directory, "+
+			"or the BLOB_* variables for object storage")
 	}
 
 	// Object storage is all-or-nothing: a partial configuration would fail at the
 	// first upload with whichever piece is missing, which is a worse place to find
 	// out than at boot.
 	if c.Blob.Configured() {
-		var missing []string
 		for _, f := range []struct{ name, value string }{
 			{"BLOB_BUCKET", c.Blob.Bucket},
 			{"BLOB_ACCESS_KEY_ID", c.Blob.AccessKey},
-			{"BLOB_SECRET_ACCESS_KEY", c.Blob.SecretKey},
-			{"BLOB_PUBLIC_BASE_URL", c.Blob.PublicBaseURL},
+			{"BLOB_SECRET_ACCESS_KEY", c.Blob.SecretKey.Reveal()},
 		} {
 			if strings.TrimSpace(f.value) == "" {
-				missing = append(missing, f.name)
+				r.Fail(f.name, "is required when BLOB_ENDPOINT is set")
 			}
 		}
-		if len(missing) > 0 {
-			return Config{}, fmt.Errorf(
-				"config: BLOB_ENDPOINT is set, so these are required too: %s", strings.Join(missing, ", "))
-		}
-		u, err := url.Parse(c.Blob.PublicBaseURL)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return Config{}, fmt.Errorf(
-				"config: BLOB_PUBLIC_BASE_URL %q must be an absolute URL", c.Blob.PublicBaseURL)
+		if c.Blob.PublicBaseURL == "" {
+			r.Fail("BLOB_PUBLIC_BASE_URL", "is required when BLOB_ENDPOINT is set")
+		} else if u, err := url.Parse(c.Blob.PublicBaseURL); err != nil || u.Scheme == "" || u.Host == "" {
+			r.Fail("BLOB_PUBLIC_BASE_URL", "must be an absolute URL")
 		}
 	} else if c.Blob.Bucket != "" || c.Blob.AccessKey != "" || c.Blob.PublicBaseURL != "" {
-		return Config{}, fmt.Errorf(
-			"config: BLOB_* variables are set but BLOB_ENDPOINT is not, so uploads would be off")
+		r.Fail("BLOB_ENDPOINT", "BLOB_* variables are set but BLOB_ENDPOINT is not, so uploads would be off")
 	}
 
 	// "any" is spelled out rather than being an empty list, so disabling a
 	// security check is something an operator typed on purpose.
-	switch cidrs := strings.TrimSpace(os.Getenv("PAYFAST_ALLOWED_CIDRS")); cidrs {
-	case "":
-	case "any":
+	if cidrs := strings.TrimSpace(r.String("PAYFAST_ALLOWED_CIDRS", "")); cidrs == "any" {
 		c.PayFast.AllowAnySourceIP = true
-	default:
-		for _, cidr := range strings.Split(cidrs, ",") {
+	} else {
+		for cidr := range strings.SplitSeq(cidrs, ",") {
 			if cidr = strings.TrimSpace(cidr); cidr != "" {
 				c.PayFast.AllowedCIDRs = append(c.PayFast.AllowedCIDRs, cidr)
 			}
@@ -809,7 +700,7 @@ func Load() (Config, error) {
 	if c.PayFast.NotifyURL != "" {
 		u, err := url.Parse(c.PayFast.NotifyURL)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return Config{}, fmt.Errorf("config: PAYFAST_NOTIFY_URL %q must be an absolute URL", c.PayFast.NotifyURL)
+			r.Fail("PAYFAST_NOTIFY_URL", "must be an absolute URL")
 		}
 	}
 
@@ -821,12 +712,15 @@ func Load() (Config, error) {
 			continue
 		}
 		if fi, err := os.Stat(d.path); err != nil {
-			return Config{}, fmt.Errorf("config: %s %q: %w", d.key, d.path, err)
+			r.Fail(d.key, "cannot access directory")
 		} else if !fi.IsDir() {
-			return Config{}, fmt.Errorf("config: %s %q is not a directory", d.key, d.path)
+			r.Fail(d.key, "must name a directory")
 		}
 	}
 
+	if err := r.Err(); err != nil {
+		return Config{}, err
+	}
 	return c, nil
 }
 
@@ -837,199 +731,42 @@ func Load() (Config, error) {
 // expression in the other. Neither tolerates a trailing slash or a path, so both
 // are refused here where the message can say why, rather than in a browser where
 // the symptom is a request that simply does not happen.
-func parseOrigins(key string, allowWildcard bool) ([]string, error) {
+func parseOrigins(r *env.Reader, key string, allowWildcard bool) []string {
 	var out []string
-	for _, origin := range strings.Split(os.Getenv(key), ",") {
-		origin = strings.TrimSpace(origin)
-		if origin == "" {
-			continue
-		}
+	for _, origin := range r.List(key, nil) {
 		if origin == "*" {
 			if !allowWildcard {
-				return nil, fmt.Errorf("config: %s does not accept \"*\" — list the origins", key)
+				r.Fail(key, "does not accept \"*\" — list the origins")
+				continue
 			}
 			out = append(out, origin)
 			continue
 		}
 		u, err := url.Parse(origin)
 		if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" {
-			return nil, fmt.Errorf("config: %s entry %q must be scheme://host[:port] with no path", key, origin)
+			r.Fail(key, "each entry must be scheme://host[:port] with no path")
+			continue
 		}
 		out = append(out, origin)
 	}
-	return out, nil
+	return out
 }
 
-// LoadTool loads only the database settings, for the migration commands, which
-// need no payment or mail credentials.
+// LoadTool loads the database and logging settings for migration commands,
+// which need no payment or mail credentials.
 func LoadTool() (Config, error) {
 	// Tool jobs must not require unrelated secret files to be mounted.
-	sec, err := loadSecrets("DATABASE_URL")
-	if err != nil {
-		return Config{}, err
-	}
+	r := env.New(os.LookupEnv)
 	c := Config{
-		DatabaseURL: sec.get("DATABASE_URL"),
-		LogLevel:    env("LOG_LEVEL", "info"),
-		LogFormat:   env("LOG_FORMAT", "json"),
+		DatabaseURL: r.Secret("DATABASE_URL"),
+		LogLevel:    r.OneOf("LOG_LEVEL", "info", "debug", "info", "warn", "error"),
+		LogFormat:   r.OneOf("LOG_FORMAT", "json", "json", "gcp"),
 	}
-	if c.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("config: required env vars not set: DATABASE_URL")
+	if !c.DatabaseURL.IsSet() {
+		r.Fail("DATABASE_URL", "is required (or set DATABASE_URL_FILE)")
 	}
-	if err := checkLogLevel(c.LogLevel); err != nil {
-		return Config{}, err
-	}
-	if err := checkLogFormat(c.LogFormat); err != nil {
+	if err := r.Err(); err != nil {
 		return Config{}, err
 	}
 	return c, nil
-}
-
-func checkLogFormat(format string) error {
-	switch format {
-	case "json", "gcp":
-		return nil
-	default:
-		return fmt.Errorf("config: LOG_FORMAT must be json or gcp; got %q", format)
-	}
-}
-
-func checkLogLevel(level string) error {
-	switch level {
-	case "debug", "info", "warn", "error":
-		return nil
-	default:
-		return fmt.Errorf("config: LOG_LEVEL must be one of debug, info, warn, error; got %q", level)
-	}
-}
-
-// secretKeys are the settings that are credentials, and so may arrive as a file
-// instead of a value: KEY_FILE names a file whose contents are KEY. That keeps
-// them out of the process environment — which `docker inspect` shows, and which
-// a container's /proc/<pid>/environ exposes to anything running as its user —
-// and lets a deployment mount them as Compose secrets rather than write them
-// into a compose file. Identifiers that sit next to them (a merchant id, an
-// access key id, a snap code) are not on this list: they are not secret.
-var secretKeys = []string{
-	"SECRET_KEY",
-	"DATABASE_URL",
-	"SETUP_TOKEN",
-	"PAYFAST_MERCHANT_KEY",
-	"PAYFAST_PASSPHRASE",
-	"SNAPSCAN_API_KEY",
-	"SNAPSCAN_WEBHOOK_AUTH_KEY",
-	"SNAPSCAN_VALIDATION_KEY",
-	"SMTP_PASSWORD",
-	"SMTP_OAUTH_CLIENT_SECRET",
-	"GRAPH_CLIENT_SECRET",
-	"BLOB_SECRET_ACCESS_KEY",
-}
-
-// secrets holds the values read from KEY_FILE for the keys that had one.
-type secrets map[string]string
-
-// maxSecretFile bounds a secret file. Real credentials are a few hundred bytes;
-// the cap stops a wrong path (a log, a device) from being read whole.
-const maxSecretFile = 64 << 10
-
-// loadSecrets reads KEY_FILE for each key that has one, so that a file which is
-// missing or unreadable is a boot failure naming the setting, rather than an
-// empty credential discovered at the first checkout.
-//
-// "Set" means non-empty on both sides. The development compose file supplies
-// most of these as `${KEY:-}`, i.e. present but empty, and that must not read as
-// a conflict with a KEY_FILE alongside it.
-//
-// Errors name KEY_FILE and never the path or the contents: a path variable
-// often gets a secret pasted into it by mistake, and the log is not the place
-// for either.
-func loadSecrets(keys ...string) (secrets, error) {
-	s := make(secrets)
-	for _, key := range keys {
-		path := os.Getenv(key + "_FILE")
-		if path == "" {
-			continue
-		}
-		if os.Getenv(key) != "" {
-			return nil, fmt.Errorf("config: %s and %s_FILE are both set; set one", key, key)
-		}
-		v, err := readSecretFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("config: %s_FILE: %w", key, err)
-		}
-		s[key] = v
-	}
-	return s, nil
-}
-
-// readSecretFile drops all trailing CR and LF bytes so extra line endings from
-// editors do not become part of the credential. Spaces and all other bytes are
-// kept. Its errors carry no path: an *os.PathError is reduced to its cause.
-func readSecretFile(path string) (string, error) {
-	// O_NONBLOCK so that opening a FIFO with no writer returns at once and the
-	// type check below can refuse it, rather than blocking startup forever. It has
-	// no effect on a regular file.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		var pe *fs.PathError
-		if errors.As(err, &pe) {
-			err = pe.Err
-		}
-		return "", fmt.Errorf("cannot be read: %w", err)
-	}
-	defer f.Close()
-	// Checked on the open descriptor, so the file cannot change type between the
-	// check and the read.
-	info, err := f.Stat()
-	if err != nil {
-		return "", errors.New("cannot be read")
-	}
-	if !info.Mode().IsRegular() {
-		return "", errors.New("must be a regular file")
-	}
-	b, err := io.ReadAll(io.LimitReader(f, maxSecretFile+1))
-	if err != nil {
-		return "", errors.New("cannot be read")
-	}
-	if len(b) > maxSecretFile {
-		return "", fmt.Errorf("is larger than %d bytes", maxSecretFile)
-	}
-	v := strings.TrimRight(string(b), "\r\n")
-	if v == "" {
-		return "", errors.New("is empty")
-	}
-	return v, nil
-}
-
-// get returns key's value from its file if it had one, else from the
-// environment.
-func (s secrets) get(key string) string {
-	if v, ok := s[key]; ok {
-		return v
-	}
-	return os.Getenv(key)
-}
-
-// boolEnv reads a flag. Only the exact spellings true and false are accepted
-// (empty or unset means def). Anything else is an error naming the key, because
-// a typo in a safety default (PAYFAST_SANDBOX, BLOB_USE_TLS) must stop startup
-// rather than quietly pick a side. The value is never echoed.
-func boolEnv(key string, def bool) (bool, error) {
-	switch os.Getenv(key) {
-	case "":
-		return def, nil
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return def, fmt.Errorf("config: %s must be true or false", key)
-	}
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

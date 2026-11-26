@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -73,7 +74,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	pool, err := db.Connect(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return err
 	}
@@ -90,7 +91,7 @@ func run() error {
 	}
 
 	users := auth.NewStore(pool)
-	if err := ensureSetupToken(ctx, users, cfg.SetupToken, log); err != nil {
+	if err := ensureSetupToken(ctx, users, cfg.SetupTokenValue(), log); err != nil {
 		return err
 	}
 
@@ -132,7 +133,7 @@ func run() error {
 		handler.SetAssetReload(true)
 		tmpl.SetReload(true)
 	}
-	outboxKey, signer, err := deriveKeys(cfg.SecretKey)
+	outboxKey, signer, err := deriveKeys(strings.TrimSpace(cfg.SecretKey.Reveal()))
 	if err != nil {
 		return err
 	}
@@ -354,8 +355,8 @@ func newPayFast(cfg config.Config, log *slog.Logger) (payment.Gateway, error) {
 
 	return payfast.New(payfast.Config{
 		MerchantID:       cfg.PayFast.MerchantID,
-		MerchantKey:      cfg.PayFast.MerchantKey,
-		Passphrase:       cfg.PayFast.Passphrase,
+		MerchantKey:      cfg.PayFast.MerchantKey.Reveal(),
+		Passphrase:       cfg.PayFast.Passphrase.Reveal(),
 		Sandbox:          cfg.PayFast.Sandbox,
 		ReturnURL:        cfg.BaseURL + "/checkout/success",
 		CancelURL:        cfg.BaseURL + "/checkout/cancel",
@@ -380,9 +381,9 @@ func newPayFast(cfg config.Config, log *slog.Logger) (payment.Gateway, error) {
 func newSnapScan(cfg config.Config, log *slog.Logger) (payment.Gateway, error) {
 	return snapscan.New(snapscan.Config{
 		SnapCode:       cfg.SnapScan.SnapCode,
-		APIKey:         cfg.SnapScan.APIKey,
-		WebhookAuthKey: cfg.SnapScan.WebhookAuthKey,
-		ValidationKey:  cfg.SnapScan.ValidationKey,
+		APIKey:         strings.TrimSpace(cfg.SnapScan.APIKey.Reveal()),
+		WebhookAuthKey: strings.TrimSpace(cfg.SnapScan.WebhookAuthKey.Reveal()),
+		ValidationKey:  strings.TrimSpace(cfg.SnapScan.ValidationKey.Reveal()),
 		SuccessURL:     cfg.BaseURL + "/checkout/success",
 		FailURL:        cfg.BaseURL + "/checkout/cancel",
 		Log:            log,
@@ -410,7 +411,7 @@ func newMailer(cfg config.Config, log *slog.Logger) (mailer.Sender, error) {
 	// one app registration and one permission grant, not both — so there is no
 	// reason to build an SMTP sender at all once Graph is in play.
 	if cfg.Graph.Configured() {
-		tokens, err := msauth.New(cfg.Graph.TenantID, cfg.Graph.ClientID, cfg.Graph.ClientSecret,
+		tokens, err := msauth.New(cfg.Graph.TenantID, cfg.Graph.ClientID, cfg.Graph.ClientSecret.Reveal(),
 			msauth.WithScope(msauth.ScopeGraph))
 		if err != nil {
 			return nil, err
@@ -446,7 +447,7 @@ func newMailer(cfg config.Config, log *slog.Logger) (mailer.Sender, error) {
 	auth := "password"
 	if cfg.SMTP.OAuth.Configured() {
 		tokens, err = msauth.New(
-			cfg.SMTP.OAuth.TenantID, cfg.SMTP.OAuth.ClientID, cfg.SMTP.OAuth.ClientSecret)
+			cfg.SMTP.OAuth.TenantID, cfg.SMTP.OAuth.ClientID, cfg.SMTP.OAuth.ClientSecret.Reveal())
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +460,7 @@ func newMailer(cfg config.Config, log *slog.Logger) (mailer.Sender, error) {
 		Host:        cfg.SMTP.Host,
 		Port:        cfg.SMTP.Port,
 		Username:    cfg.SMTP.Username,
-		Password:    cfg.SMTP.Password,
+		Password:    cfg.SMTP.Password.Reveal(),
 		TokenSource: tokens,
 		From:        cfg.SMTP.From,
 		ReplyTo:     cfg.SMTP.ReplyTo,
@@ -499,7 +500,7 @@ func newBlobStorage(cfg config.Config, log *slog.Logger) (blob.Storage, error) {
 		Endpoint:      cfg.Blob.Endpoint,
 		Bucket:        cfg.Blob.Bucket,
 		AccessKey:     cfg.Blob.AccessKey,
-		SecretKey:     cfg.Blob.SecretKey,
+		SecretKey:     cfg.Blob.SecretKey.Reveal(),
 		Region:        cfg.Blob.Region,
 		UseTLS:        cfg.Blob.UseTLS,
 		PublicBaseURL: cfg.Blob.PublicBaseURL,

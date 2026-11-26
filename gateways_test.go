@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/17xande-dev/env"
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/handler"
 )
@@ -15,18 +16,26 @@ import (
 // gatewayConfig is the smallest config newGateways reads, with both providers
 // switched on. Tests turn one off rather than building a config from scratch.
 func gatewayConfig() config.Config {
+	secrets := env.New(func(key string) (string, bool) {
+		value, ok := map[string]string{
+			"PAYFAST_MERCHANT_KEY":      "46f0cd694581a",
+			"SNAPSCAN_API_KEY":          "api-key",
+			"SNAPSCAN_WEBHOOK_AUTH_KEY": "webhook-key",
+		}[key]
+		return value, ok
+	})
 	return config.Config{
 		BaseURL:  "https://events.example",
 		Currency: "ZAR",
 		PayFast: config.PayFast{
 			MerchantID:  "10000100",
-			MerchantKey: "46f0cd694581a",
+			MerchantKey: secrets.Secret("PAYFAST_MERCHANT_KEY"),
 			Sandbox:     true,
 		},
 		SnapScan: config.SnapScan{
 			SnapCode:       "shopalot",
-			APIKey:         "api-key",
-			WebhookAuthKey: "webhook-key",
+			APIKey:         secrets.Secret("SNAPSCAN_API_KEY"),
+			WebhookAuthKey: secrets.Secret("SNAPSCAN_WEBHOOK_AUTH_KEY"),
 		},
 	}
 }

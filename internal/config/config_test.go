@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/17xande-dev/env"
 )
 
 // setRequired sets every required var to something valid, so each test can
@@ -91,7 +93,7 @@ func TestLoad_Defaults(t *testing.T) {
 	// No admin credential in the environment at all: the first account is claimed
 	// at /admin/setup, and there is nothing to sign a cookie with because a
 	// session is a row.
-	if c.SetupToken != "" {
+	if c.SetupToken.IsSet() {
 		t.Errorf("SetupToken = %q with SETUP_TOKEN unset, want empty", c.SetupToken)
 	}
 	// A plain-HTTP BaseURL cannot use Secure cookies, or local development
@@ -149,8 +151,8 @@ func TestLoad_SetupToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.SetupToken != token {
-		t.Errorf("SetupToken = %q, want the trimmed %q", c.SetupToken, token)
+	if c.SetupTokenValue() != token {
+		t.Error("SetupToken did not match the trimmed token")
 	}
 
 	// A short one is refused rather than accepted: while it is unclaimed it is
@@ -540,7 +542,7 @@ func TestLoad_SessionTTL(t *testing.T) {
 		t.Errorf("SessionTTL = %s, want 8h", c.SessionTTL)
 	}
 
-	for _, bad := range []string{"0", "-1", "eight", ""} {
+	for _, bad := range []string{"0", "-1", "eight"} {
 		setRequired(t)
 		t.Setenv("SESSION_TTL_HOURS", bad)
 		if _, err := Load(); err == nil {
@@ -565,7 +567,7 @@ func TestLoadTool_NeedsOnlyDatabaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTool with only DATABASE_URL: %v", err)
 	}
-	if c.DatabaseURL == "" {
+	if !c.DatabaseURL.IsSet() {
 		t.Error("DatabaseURL is empty")
 	}
 	if c.LogLevel != "info" {
@@ -598,11 +600,11 @@ func TestLoad_SecretFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if want := "postgres://u:from-file@db:5432/goevent"; c.DatabaseURL != want {
-		t.Errorf("DatabaseURL = %q, want %q", c.DatabaseURL, want)
+	if c.DatabaseURL.Reveal() != "postgres://u:from-file@db:5432/goevent" {
+		t.Error("DatabaseURL did not match the file's value")
 	}
-	if want := "key-from-file"; c.PayFast.MerchantKey != want {
-		t.Errorf("MerchantKey = %q, want %q", c.PayFast.MerchantKey, want)
+	if c.PayFast.MerchantKey.Reveal() != "key-from-file" {
+		t.Error("MerchantKey did not match the file's value")
 	}
 }
 
@@ -618,8 +620,8 @@ func TestLoad_SecretKeepsInnerWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if want := "a pass phrase"; c.PayFast.Passphrase != want {
-		t.Errorf("Passphrase = %q, want %q", c.PayFast.Passphrase, want)
+	if c.PayFast.Passphrase.Reveal() != "a pass phrase" {
+		t.Error("Passphrase did not match the file's value")
 	}
 }
 
@@ -662,7 +664,7 @@ func TestLoad_EmptyValueBesideFileIsNotAConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty KEY beside KEY_FILE was refused: %v", err)
 	}
-	if c.PayFast.MerchantKey != "key-from-file" {
+	if c.PayFast.MerchantKey.Reveal() != "key-from-file" {
 		t.Errorf("MerchantKey = %q, want the file's value", c.PayFast.MerchantKey)
 	}
 }
@@ -675,7 +677,7 @@ func TestLoad_EmptyFileVarFallsBackToValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if c.PayFast.MerchantKey != "46f0cd694581a" {
+	if c.PayFast.MerchantKey.Reveal() != "46f0cd694581a" {
 		t.Errorf("MerchantKey = %q, want the plain value when KEY_FILE is empty", c.PayFast.MerchantKey)
 	}
 }
@@ -696,11 +698,22 @@ func TestLoad_UnreadableSecretFileIsRefused(t *testing.T) {
 }
 
 func TestLoad_EverySecretKeyAcceptsAFile(t *testing.T) {
-	// Guards the list itself: each credential must actually be read through the
-	// resolver, so adding a key to secretKeys and forgetting to switch its read
-	// over is caught here rather than in production. The value is distinctive
-	// enough that finding it anywhere in the loaded config proves it arrived.
-	for _, key := range secretKeys {
+	// Verify that each file reaches the credential it belongs to, while the
+	// full config stays safe to print.
+	for key, field := range map[string]func(Config) env.Secret{
+		"SECRET_KEY":                func(c Config) env.Secret { return c.SecretKey },
+		"DATABASE_URL":              func(c Config) env.Secret { return c.DatabaseURL },
+		"SETUP_TOKEN":               func(c Config) env.Secret { return c.SetupToken },
+		"PAYFAST_MERCHANT_KEY":      func(c Config) env.Secret { return c.PayFast.MerchantKey },
+		"PAYFAST_PASSPHRASE":        func(c Config) env.Secret { return c.PayFast.Passphrase },
+		"SNAPSCAN_API_KEY":          func(c Config) env.Secret { return c.SnapScan.APIKey },
+		"SNAPSCAN_WEBHOOK_AUTH_KEY": func(c Config) env.Secret { return c.SnapScan.WebhookAuthKey },
+		"SNAPSCAN_VALIDATION_KEY":   func(c Config) env.Secret { return c.SnapScan.ValidationKey },
+		"SMTP_PASSWORD":             func(c Config) env.Secret { return c.SMTP.Password },
+		"SMTP_OAUTH_CLIENT_SECRET":  func(c Config) env.Secret { return c.SMTP.OAuth.ClientSecret },
+		"GRAPH_CLIENT_SECRET":       func(c Config) env.Secret { return c.Graph.ClientSecret },
+		"BLOB_SECRET_ACCESS_KEY":    func(c Config) env.Secret { return c.Blob.SecretKey },
+	} {
 		t.Run(key, func(t *testing.T) {
 			setRequired(t)
 			// Features whose credentials are only read when the feature is on.
@@ -742,8 +755,11 @@ func TestLoad_EverySecretKeyAcceptsAFile(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load with %s_FILE: %v", key, err)
 			}
-			if got := fmt.Sprintf("%+v", c); !strings.Contains(got, marker) {
+			if field(c).Reveal() != value {
 				t.Errorf("%s_FILE was accepted but its value never reached the config", key)
+			}
+			if strings.Contains(fmt.Sprintf("%+v", c), marker) {
+				t.Errorf("printing Config exposes %s", key)
 			}
 		})
 	}
@@ -761,8 +777,8 @@ func TestLoadTool_DatabaseURLFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTool: %v", err)
 	}
-	if want := "postgres://u:from-file@db:5432/goevent"; c.DatabaseURL != want {
-		t.Errorf("DatabaseURL = %q, want %q", c.DatabaseURL, want)
+	if c.DatabaseURL.Reveal() != "postgres://u:from-file@db:5432/goevent" {
+		t.Error("DatabaseURL did not match the file's value")
 	}
 }
 
@@ -803,12 +819,13 @@ func TestLoad_RefusesRealPaymentsWithDemoCredentials(t *testing.T) {
 	if err == nil {
 		t.Fatal("real payments were accepted with the demo merchant id")
 	}
-	// The message has to name the variable and the value, because the person
-	// reading it has just been told their deployment will not start.
-	for _, want := range []string{"PAYFAST_SANDBOX", "PAYFAST_MERCHANT_ID", "10000100"} {
+	for _, want := range []string{"PAYFAST_SANDBOX", "PAYFAST_MERCHANT_ID", "published sandbox merchant id"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not mention %s: %v", want, err)
 		}
+	}
+	if strings.Contains(err.Error(), "10000100") {
+		t.Error("error echoes the merchant id")
 	}
 
 	// The same credentials are fine while the sandbox is on — that is the whole
@@ -848,7 +865,7 @@ func TestLoad_SMTPOAuth(t *testing.T) {
 		t.Fatalf("OAuth = %+v, want it configured", c.SMTP.OAuth)
 	}
 	if c.SMTP.OAuth.TenantID != "tenant-id" || c.SMTP.OAuth.ClientID != "client-id" ||
-		c.SMTP.OAuth.ClientSecret != "client-secret" {
+		c.SMTP.OAuth.ClientSecret.Reveal() != "client-secret" {
 		t.Errorf("OAuth = %+v, want the configured registration", c.SMTP.OAuth)
 	}
 
@@ -1023,7 +1040,7 @@ func TestLoad_RejectsABaseURLThatCannotBeAnOrigin(t *testing.T) {
 
 // Every boolean the loader reads, with the default it falls back on. The list is
 // the single place a new flag must be added: TestBoolKeysAreAllCovered fails if
-// the source reads a boolEnv key that is not here.
+// the source reads a Bool key that is not here.
 var boolKeys = []struct {
 	key string
 	def bool
@@ -1119,12 +1136,15 @@ func TestBoolKeysAreAllCovered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`boolEnv\("([A-Z_]+)"`)
+	re := regexp.MustCompile(`\.Bool\("([A-Z_]+)"`)
 	read := map[string]bool{}
 	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
 		read[m[1]] = true
 	}
 	for _, k := range boolKeys {
+		if !read[k.key] {
+			t.Errorf("config.go does not read the expected boolean %s", k.key)
+		}
 		delete(read, k.key)
 	}
 	if len(read) > 0 {
@@ -1224,7 +1244,7 @@ func TestLoad_SecretStripsAllTrailingNewlines(t *testing.T) {
 			t.Setenv("SMTP_PASSWORD_FILE", writeSecret(t, tc.in))
 			c, err := Load()
 			if tc.want == "" {
-				if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE: is empty") {
+				if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE: secret file is empty") {
 					t.Errorf("want an empty SMTP_PASSWORD_FILE error, got %v", err)
 				}
 				return
@@ -1232,7 +1252,7 @@ func TestLoad_SecretStripsAllTrailingNewlines(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c.SMTP.Password != tc.want {
+			if c.SMTP.Password.Reveal() != tc.want {
 				t.Error("SMTP password did not match the expected bytes")
 			}
 		})
@@ -1248,7 +1268,12 @@ func TestLoad_SecretFilesAreReadFirst(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "loud")
 	t.Setenv("SMTP_PASSWORD_FILE", filepath.Join(t.TempDir(), "gone"))
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "SMTP_PASSWORD_FILE") {
+	if err == nil || !strings.HasPrefix(err.Error(), "SMTP_PASSWORD_FILE:") {
 		t.Fatalf("want the secret-file error first, got %v", err)
+	}
+	for _, key := range []string{"PAYFAST_SANDBOX:", "LOG_LEVEL:"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("also want the %s problem", key)
+		}
 	}
 }
