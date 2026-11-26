@@ -33,13 +33,16 @@ lets a deployment mount it as a Compose or Kubernetes secret. Setting both `KEY`
 `KEY_FILE` is refused at boot. The file must be readable, regular, and at most 64 KiB.
 All trailing carriage returns (CR) and line feeds (LF) are stripped, so extra line
 endings do not become part of the secret. Everything else, including trailing spaces,
-is preserved. A file that is empty after stripping is refused.
+is preserved. A file that is empty after stripping is refused. Errors name the
+`KEY_FILE` variable and never the path or the contents, since a path can itself
+hold a pasted credential.
 
 The keys that accept `_FILE` are `SECRET_KEY`, `DATABASE_URL`, `SETUP_TOKEN`,
 `PAYFAST_MERCHANT_KEY`, `PAYFAST_PASSPHRASE`, `SNAPSCAN_API_KEY`,
 `SNAPSCAN_WEBHOOK_AUTH_KEY`, `SNAPSCAN_VALIDATION_KEY`, `SMTP_PASSWORD`,
 `SMTP_OAUTH_CLIENT_SECRET`, `GRAPH_CLIENT_SECRET` and `BLOB_SECRET_ACCESS_KEY`
-(`secretKeys` in `config.go`). Identifiers that sit beside them, such as a merchant id, an
+(each is an `env.Secret` field of `Config`, read in `config.go`).
+Identifiers that sit beside them, such as a merchant id, an
 access key id or a snap code, are not secret and do not.
 
 ## `SECRET_KEY`
