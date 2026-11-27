@@ -59,17 +59,6 @@ type Attendee struct {
 	Position       int
 }
 
-type EmailJob struct {
-	ID             int64
-	RegistrationID string
-	Kind           string
-	Payload        []byte
-	Attempts       int
-	NextAttemptAt  time.Time
-	LastError      string
-	SentAt         *time.Time
-}
-
 type Event struct {
 	ID                   string
 	Slug                 string

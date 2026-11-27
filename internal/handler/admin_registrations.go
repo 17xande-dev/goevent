@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/csv"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/outbox"
 	"github.com/17xande-dev/websec"
 )
 
@@ -76,7 +77,7 @@ type registrationPage struct {
 	Answers         []registrations.Answer
 	AttendeeAnswers map[string][]registrations.Answer
 	Payments        []registrations.Payment
-	Emails          []outbox.Status
+	Emails          []outbox.Info
 	PaidCents       int64
 	ManageURL       string
 	Notice, Problem string
@@ -128,7 +129,8 @@ func (h *Handler) adminRegistrationShow(w http.ResponseWriter, r *http.Request) 
 			data.PaidCents += p.AmountCents
 		}
 	}
-	if data.Emails, err = h.outbox.ForRegistration(r.Context(), reg.ID); err != nil {
+	// Keep older failures visible even after more than one page of resends.
+	if data.Emails, err = h.outbox.List(r.Context(), outbox.Filter{Subject: registrationSubject(reg.ID), Limit: math.MaxInt32}); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -170,6 +172,7 @@ func (h *Handler) adminRegistrationPay(w http.ResponseWriter, r *http.Request) {
 		"amount_cents", cents, "confirmed", confirmed, "by", h.actorID(r))
 	notice := "paid"
 	if confirmed {
+		h.outbox.Wake()
 		notice = "confirmed"
 	}
 	http.Redirect(w, r, registrationPath(id)+"?notice="+notice, http.StatusSeeOther)
@@ -212,8 +215,8 @@ func (h *Handler) adminRegistrationResend(w http.ResponseWriter, r *http.Request
 		h.registrationProblem(w, r, reg.ID, "not_confirmed")
 		return
 	}
-	if err := h.outbox.Queue(r.Context(), reg.ID, outbox.KindResend, nil); err != nil {
-		h.serverError(w, r, err)
+	if _, _, err := h.outbox.EnqueueNow(r.Context(), outbox.Message{Kind: kindResend, Subject: registrationSubject(reg.ID)}); err != nil {
+		h.serverError(w, r, mailQueueError("enqueue resend email", err))
 		return
 	}
 	http.Redirect(w, r, registrationPath(reg.ID)+"?notice=resent", http.StatusSeeOther)
@@ -225,8 +228,8 @@ func (h *Handler) adminRegistrationRetryEmail(w http.ResponseWriter, r *http.Req
 		h.storeError(w, r, err)
 		return
 	}
-	if err := h.outbox.Retry(r.Context(), reg.ID); err != nil {
-		h.serverError(w, r, err)
+	if _, err := h.outbox.RetrySubject(r.Context(), registrationSubject(reg.ID), h.actorID(r)); err != nil {
+		h.serverError(w, r, mailQueueError("retry registration emails", err))
 		return
 	}
 	http.Redirect(w, r, registrationPath(reg.ID)+"?notice=retrying", http.StatusSeeOther)

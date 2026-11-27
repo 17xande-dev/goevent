@@ -109,13 +109,14 @@ refund it in the gateway's dashboard.</p>
 {{if .Emails}}
 <div class="scroll-x">
   <table>
-    <thead><tr><th>Email</th><th>Attempts</th><th>Sent</th><th></th></tr></thead>
+    <thead><tr><th>Email</th><th>Status</th><th>Attempts</th><th>Sent</th><th></th></tr></thead>
     <tbody>
     {{range .Emails}}
       <tr>
         <td>{{label .Kind}}</td>
-        <td class="num">{{.Attempts}}</td>
-        <td>{{with .SentAt}}{{($.Event.Local .).Format "2 Jan 15:04"}}{{else}}<span class="muted">Not yet</span>{{end}}</td>
+        <td>{{label .State}}</td>
+        <td class="num">{{.Attempts}}/{{.MaxAttempts}}</td>
+        <td>{{if eq .State "done"}}{{($.Event.Local .FinishedAt).Format "2 Jan 15:04"}}{{else}}<span class="muted">Not yet</span>{{end}}</td>
         <td><small class="muted">{{.LastError}}</small></td>
       </tr>
     {{end}}

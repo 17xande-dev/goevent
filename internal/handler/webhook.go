@@ -117,6 +117,7 @@ func (h *Handler) applyCallback(r *http.Request, gateway payment.Gateway, cb pay
 		// Routine: gateways retry, and this is what stops a retry confirming twice.
 		log.Info("ignored a replayed payment notification")
 	case outcome == registrations.Confirmed:
+		h.outbox.Wake()
 		log.Info("payment received; registration confirmed")
 	default:
 		log.Info("payment received; registration not yet paid in full")

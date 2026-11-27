@@ -17,12 +17,15 @@ import (
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
+	"github.com/17xande-dev/outbox"
+	"github.com/17xande-dev/outbox/outboxtest"
+	"github.com/17xande-dev/outbox/pgxstore"
 	"github.com/17xande-dev/password"
 	"github.com/17xande-dev/payment"
 	"github.com/17xande-dev/websec/webtest"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -66,7 +69,8 @@ type app struct {
 	gateway *payment.Fake
 	mail    *mailer.Fake
 	images  *blob.Fake
-	outbox  *outbox.Store
+	outbox  *outbox.Queue[pgx.Tx]
+	clock   *outboxtest.Clock
 	events  *events.Store
 	regs    *registrations.Store
 	signer  registrations.Signer
@@ -164,10 +168,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	eventStore := events.NewStore(pool)
 	gateway := payment.NewFake()
 	mail := mailer.NewFake()
-	queue, err := outbox.New(pool, strings.Repeat("ab", 32))
-	if err != nil {
-		t.Fatal(err)
-	}
+	clock := outboxtest.NewClock(time.Now())
 	regs := registrations.NewStore(pool)
 	signer := registrations.NewSigner([]byte("test secret"))
 	h := mustNew(t, Deps{
@@ -179,7 +180,8 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 		Signer:        signer,
 		Gateways:      registryOf(t, append([]payment.Gateway{gateway}, extraGateways...)...),
 		Mail:          mail,
-		Outbox:        queue,
+		OutboxStore:   pgxstore.New(pool),
+		OutboxOptions: outbox.Options{Sealer: outboxtest.Sealer(t, 1), Now: clock.Now, Logger: log},
 		Images:        images,
 		Users:         users,
 	})
@@ -199,7 +201,7 @@ func newUnclaimedAppWith(t *testing.T, extraGateways []payment.Gateway, edit ...
 	return &app{
 		srv:     &testServer{srv, webtest.NewServer(t, srv, browserFormHeaders)},
 		handler: h, gateway: gateway, mail: mail, images: images,
-		outbox: queue, users: users, pool: pool, events: eventStore, regs: regs, signer: signer,
+		outbox: h.MailQueue(), clock: clock, users: users, pool: pool, events: eventStore, regs: regs, signer: signer,
 	}
 }
 

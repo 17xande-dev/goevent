@@ -214,6 +214,9 @@ func (h *Handler) registerSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	reg := res.Registration
 	if !res.Reused {
+		if res.Payment == nil {
+			h.outbox.Wake()
+		}
 		h.logger(r).Info("registration made", "registration", reg.ID, "reference", reg.Reference,
 			"event", e.ID, "attendees", len(res.Attendees), "total_cents", reg.TotalCents, "status", reg.Status)
 	}

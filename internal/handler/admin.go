@@ -15,14 +15,15 @@ import (
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/middleware"
-	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
+	"github.com/17xande-dev/outbox"
 	"github.com/17xande-dev/payment"
 	"github.com/17xande-dev/ratelimit"
 	"github.com/17xande-dev/ratelimit/clientip"
 	"github.com/17xande-dev/websec/cookie"
 	"github.com/17xande-dev/websec/csrf"
+	"github.com/jackc/pgx/v5"
 )
 
 // Handler holds everything the HTTP layer needs. It is created once at startup
@@ -43,7 +44,7 @@ type Handler struct {
 	// resolve a name to the provider that can prove a notification genuine.
 	gateways payment.Registry
 	mail     mailer.Sender
-	outbox   *outbox.Store
+	outbox   *outbox.Queue[pgx.Tx]
 	// blob is the public image store event pictures live in.
 	blob blob.Storage
 
@@ -123,7 +124,8 @@ type Deps struct {
 	Signer        registrations.Signer
 	Gateways      payment.Registry
 	Mail          mailer.Sender
-	Outbox        *outbox.Store
+	OutboxStore   outbox.Store[pgx.Tx]
+	OutboxOptions outbox.Options
 	Images        blob.Storage
 	Users         *auth.Store
 }
@@ -136,7 +138,7 @@ func New(d Deps) (*Handler, error) {
 	h := &Handler{
 		cfg: cfg, log: log, tmpl: d.Tmpl, events: d.Events, regs: d.Registrations, signer: d.Signer,
 		gateways: d.Gateways, mail: d.Mail,
-		blob: d.Images, users: d.Users, outbox: d.Outbox,
+		blob: d.Images, users: d.Users,
 	}
 	if d.Users != nil {
 		h.authenticateLogin = d.Users.Authenticate
@@ -162,6 +164,12 @@ func New(d Deps) (*Handler, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("BASE_URL %q cannot be the CSRF origin: %w", cfg.BaseURL, err)
+	}
+	if d.OutboxStore != nil {
+		h.outbox, err = h.newMailQueue(d.OutboxStore, d.OutboxOptions)
+		if err != nil {
+			return nil, fmt.Errorf("initialize email queue: %w", err)
+		}
 	}
 	loginByEmail, err := ratelimit.New(ratelimit.Config{
 		Rate: 1.0 / 60, Burst: 5, IdleTTL: 30 * time.Minute,

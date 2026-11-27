@@ -400,6 +400,7 @@ var labels = map[string]string{
 	"pending": "Pending", "paid": "Paid", "failed": "Failed", "cancelled": "Cancelled",
 	"confirmation": "Confirmation with tickets", "received": "Payment instructions",
 	"notify": "Organiser's copy", "resend": "Tickets sent again",
+	"running": "Sending", "done": "Sent", "dead": "Dead", "discarded": "Discarded",
 }
 
 func dict(kv ...any) (map[string]any, error) {

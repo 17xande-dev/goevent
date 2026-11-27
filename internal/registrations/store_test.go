@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/17xande-dev/goevent/internal/db/gen"
 	"github.com/17xande-dev/goevent/internal/dbtest"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -99,8 +99,8 @@ func TestCheckoutWith_RunsTheRightHookInTheTransaction(t *testing.T) {
 	f := open(t, 10, func(e *events.Event) { e.PayLater, e.PayLaterInstructions = true, "EFT" })
 	var confirmed, awaiting int
 	hooks := registrations.Hooks{
-		Confirmed: func(context.Context, *gen.Queries, registrations.Confirmation) error { confirmed++; return nil },
-		AwaitingPayment: func(context.Context, *gen.Queries, registrations.Registration) error {
+		Confirmed: func(context.Context, pgx.Tx, registrations.Confirmation) error { confirmed++; return nil },
+		AwaitingPayment: func(context.Context, pgx.Tx, registrations.Registration) error {
 			awaiting++
 			return nil
 		},
@@ -120,7 +120,7 @@ func TestCheckoutWith_RunsTheRightHookInTheTransaction(t *testing.T) {
 
 	boom := errors.New("queue unavailable")
 	_, err := f.regs.CheckoutWith(t.Context(), f.order("fails", "", f.free), f.now, registrations.Hooks{
-		Confirmed: func(context.Context, *gen.Queries, registrations.Confirmation) error { return boom },
+		Confirmed: func(context.Context, pgx.Tx, registrations.Confirmation) error { return boom },
 	})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
@@ -281,7 +281,7 @@ func TestMarkPaid_ConfirmsOnceAndRunsOnConfirmInTheTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	onConfirm := func(_ context.Context, _ *gen.Queries, c registrations.Confirmation) error {
+	onConfirm := func(_ context.Context, _ pgx.Tx, c registrations.Confirmation) error {
 		calls++
 		if len(c.Attendees) != 1 || c.Registration.Status != registrations.StatusConfirmed {
 			t.Errorf("confirmation = %+v", c)
@@ -309,7 +309,7 @@ func TestMarkPaid_OnConfirmFailureRollsBackThePayment(t *testing.T) {
 	res, _ := f.regs.Checkout(t.Context(), f.order("k1", "fake", f.adult), f.now)
 	boom := errors.New("queue unavailable")
 	if _, err := f.regs.MarkPaid(t.Context(), notice(res.Payment, "pf-1"),
-		func(context.Context, *gen.Queries, registrations.Confirmation) error { return boom }); !errors.Is(err, boom) {
+		func(context.Context, pgx.Tx, registrations.Confirmation) error { return boom }); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
 	// Nothing committed, so the gateway's retry gets a second chance at all of it.

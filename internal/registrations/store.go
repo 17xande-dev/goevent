@@ -89,7 +89,7 @@ type Hooks struct {
 	// Confirmed runs for a registration confirmed at checkout: a free one.
 	Confirmed OnConfirm
 	// AwaitingPayment runs for one that will be paid later, by EFT or cash.
-	AwaitingPayment func(ctx context.Context, q *gen.Queries, r Registration) error
+	AwaitingPayment func(ctx context.Context, tx pgx.Tx, r Registration) error
 }
 
 // CheckoutWith is Checkout with hooks. It is a separate method rather than a
@@ -237,11 +237,11 @@ func (s *Store) CheckoutWith(ctx context.Context, o Order, now time.Time, hooks 
 
 	switch {
 	case status == StatusConfirmed && hooks.Confirmed != nil:
-		if err := hooks.Confirmed(ctx, q, Confirmation{Registration: res.Registration, Attendees: res.Attendees}); err != nil {
+		if err := hooks.Confirmed(ctx, tx, Confirmation{Registration: res.Registration, Attendees: res.Attendees}); err != nil {
 			return Result{}, err
 		}
 	case payLater && hooks.AwaitingPayment != nil:
-		if err := hooks.AwaitingPayment(ctx, q, res.Registration); err != nil {
+		if err := hooks.AwaitingPayment(ctx, tx, res.Registration); err != nil {
 			return Result{}, err
 		}
 	}
@@ -376,7 +376,7 @@ type Notice struct {
 // OnConfirm runs inside the transaction that confirms a registration, so
 // whatever it writes — the confirmation emails, queued — commits with the
 // confirmation or not at all.
-type OnConfirm func(ctx context.Context, q *gen.Queries, c Confirmation) error
+type OnConfirm func(ctx context.Context, tx pgx.Tx, c Confirmation) error
 
 // MarkPaid applies a "paid" notification.
 //
@@ -429,7 +429,7 @@ func (s *Store) MarkPaid(ctx context.Context, n Notice, onConfirm OnConfirm) (Pa
 	if ok {
 		outcome = Confirmed
 		if onConfirm != nil {
-			if err := onConfirm(ctx, q, conf); err != nil {
+			if err := onConfirm(ctx, tx, conf); err != nil {
 				return 0, err
 			}
 		}

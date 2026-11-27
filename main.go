@@ -27,10 +27,11 @@ import (
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/handler"
 	"github.com/17xande-dev/goevent/internal/middleware"
-	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/mailer"
 	"github.com/17xande-dev/mailer/msauth"
+	"github.com/17xande-dev/outbox"
+	"github.com/17xande-dev/outbox/pgxstore"
 	"github.com/17xande-dev/payment"
 	"github.com/17xande-dev/payment/payfast"
 	"github.com/17xande-dev/payment/snapscan"
@@ -78,16 +79,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer pool.Close()
-
 	if *migrateStatus {
+		defer pool.Close()
 		return printMigrationStatus(ctx, pool, log)
 	}
+	if *migrateOnly {
+		defer pool.Close()
+		return db.Migrate(ctx, pool, log)
+	}
+	return runServer(ctx, cfg, pool, log)
+}
+
+func runServer(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) error {
+	defer pool.Close()
 	if err := db.Migrate(ctx, pool, log); err != nil {
 		return err
-	}
-	if *migrateOnly {
-		return nil
 	}
 
 	users := auth.NewStore(pool)
@@ -133,11 +139,7 @@ func run() error {
 		handler.SetAssetReload(true)
 		tmpl.SetReload(true)
 	}
-	outboxKey, signer, err := deriveKeys(strings.TrimSpace(cfg.SecretKey.Reveal()))
-	if err != nil {
-		return err
-	}
-	queue, err := outbox.New(pool, outboxKey)
+	sealer, signer, err := deriveKeys(strings.TrimSpace(cfg.SecretKey.Reveal()))
 	if err != nil {
 		return err
 	}
@@ -151,7 +153,8 @@ func run() error {
 		Signer:        signer,
 		Gateways:      gateways,
 		Mail:          mail,
-		Outbox:        queue,
+		OutboxStore:   pgxstore.New(pool),
+		OutboxOptions: outbox.Options{Sealer: sealer, Logger: log},
 		Images:        images,
 		Users:         users,
 	})
@@ -162,9 +165,16 @@ func run() error {
 	// on this context, so the sweeps stop with the server rather than outliving it.
 	startSessionCleanup(ctx, users, log)
 	startHoldExpiry(ctx, regs, log)
-	workerCtx, stopWorker := context.WithCancel(ctx)
-	waitWorker := h.StartMailWorker(workerCtx)
-	defer func() { stopWorker(); waitWorker() }()
+	stopWorker := h.MailQueue().Start(ctx)
+	defer func() {
+		// A timed-out Stop has not joined the worker. Keep the pool available
+		// for it to settle the claim before closing the database.
+		if err := stopWorker(); err != nil {
+			log.Warn("waiting for email worker to stop")
+			for stopWorker() != nil {
+			}
+		}
+	}()
 
 	srv := newServer(net.JoinHostPort("", cfg.Port), routes(cfg, h, gateways, users, pool, log))
 
@@ -269,17 +279,19 @@ func ensureSetupToken(ctx context.Context, users *auth.Store, supplied string, l
 }
 
 // deriveKeys turns the one configured secret into the keys each use needs: the
-// outbox's AES key (as the hex it takes) and the link and ticket signer. Each is
+// outbox's AES key and the link and ticket signer. Each key is
 // an HMAC of the secret under its own label, so no two uses ever share key
 // material and a key leaked from one cannot be used for another.
-func deriveKeys(secretHex string) (outboxHex string, signer registrations.Signer, err error) {
+func deriveKeys(secretHex string) (outbox.Sealer, registrations.Signer, error) {
 	secret, err := hex.DecodeString(secretHex)
 	if err != nil || len(secret) != 32 {
-		return "", registrations.Signer{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters")
+		return nil, registrations.Signer{}, errors.New("config: SECRET_KEY must be 64 hexadecimal characters")
 	}
 	m := hmac.New(sha256.New, secret)
 	m.Write([]byte("goevent/outbox/v1"))
-	return hex.EncodeToString(m.Sum(nil)), registrations.NewSigner(secret), nil
+	const keyID byte = 1
+	sealer, err := outbox.AESGCM(keyID, map[byte][]byte{keyID: m.Sum(nil)})
+	return sealer, registrations.NewSigner(secret), err
 }
 
 func printMigrationStatus(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {

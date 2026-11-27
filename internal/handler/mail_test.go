@@ -11,6 +11,8 @@ import (
 	"github.com/17xande-dev/goevent/internal/config"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/outbox"
+	"github.com/17xande-dev/outbox/outboxtest"
 )
 
 func withNotify(c *config.Config) {
@@ -22,14 +24,18 @@ func TestMail_FreeConfirmationCarriesScannableTickets(t *testing.T) {
 	s := newApp(t, withNotify)
 	e, _, child := published(t, s, 10)
 	submit(t, s, e, registerForm(t, s, e, map[string]int{child.ID: 2}))
-	s.handler.ProcessMail(t.Context())
+	e.Title = "Updated Family Camp"
+	if _, err := s.events.Update(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+	outboxtest.Drain(t, s.outbox)
 
 	got := s.mail.To("ada@example.com")
 	if len(got) != 1 {
 		t.Fatalf("the registrant got %d emails, want 1", len(got))
 	}
 	m := got[0]
-	if !strings.Contains(m.Subject, "Your tickets for Family Camp") {
+	if !strings.Contains(m.Subject, "Your tickets for Updated Family Camp") {
 		t.Errorf("subject = %q", m.Subject)
 	}
 	// One inline QR per attendee, each a real PNG the HTML refers to.
@@ -72,7 +78,7 @@ func TestMail_PaidConfirmationGoesOnceAfterThePayment(t *testing.T) {
 	s := newApp(t)
 	e, adult, _ := published(t, s, 10)
 	submit(t, s, e, registerForm(t, s, e, map[string]int{adult.ID: 1}))
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 	if n := len(s.mail.Sent()); n != 0 {
 		t.Fatalf("%d emails before anything was paid", n)
 	}
@@ -80,7 +86,7 @@ func TestMail_PaidConfirmationGoesOnceAfterThePayment(t *testing.T) {
 	paymentID := s.gateway.Requests()[0].Reference
 	callback(t, s, paymentID, "COMPLETE", 45000)
 	callback(t, s, paymentID, "COMPLETE", 45000) // the gateway retries
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 
 	got := s.mail.To("ada@example.com")
 	if len(got) != 1 || len(got[0].Inline) != 1 {
@@ -96,7 +102,7 @@ func TestMail_PayLaterIsAcknowledgedWithoutTickets(t *testing.T) {
 	form := registerForm(t, s, e, map[string]int{adult.ID: 1})
 	form.Set("method", string(registrations.MethodLater))
 	submit(t, s, e, form)
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 
 	got := s.mail.To("ada@example.com")
 	if len(got) != 1 {
@@ -118,11 +124,11 @@ func TestMail_AFailedSendIsKeptForTheNextTry(t *testing.T) {
 	submit(t, s, e, registerForm(t, s, e, map[string]int{child.ID: 1}))
 
 	s.mail.Err = errors.New("relay unavailable")
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 	reg := onlyRegistration(t, s)
-	jobs, err := s.outbox.ForRegistration(t.Context(), reg.ID)
-	if err != nil || len(jobs) != 1 || jobs[0].SentAt != nil || jobs[0].Attempts != 1 {
-		t.Fatalf("after a failed send: %+v %v", jobs, err)
+	jobs := outboxtest.Enqueued(t, s.outbox, outbox.Filter{Subject: "registration:" + reg.ID})
+	if len(jobs) != 1 || jobs[0].State != outbox.StatePending || !jobs[0].FinishedAt.IsZero() || jobs[0].Attempts != 1 {
+		t.Fatalf("after a failed send: %+v", jobs)
 	}
 	if reg.Emailed {
 		t.Error("marked emailed after a failed send")
@@ -153,7 +159,7 @@ func TestMail_ALineBreakInTheTitleDoesNotStopTheEmail(t *testing.T) {
 	s := newApp(t, withNotify)
 	e, _, child := published(t, s, 10, func(e *events.Event) { e.Title = "Family\r\nCamp" })
 	submit(t, s, e, registerForm(t, s, e, map[string]int{child.ID: 1}))
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 
 	for _, to := range []string{"ada@example.com", "organiser@example.com"} {
 		got := s.mail.To(to)

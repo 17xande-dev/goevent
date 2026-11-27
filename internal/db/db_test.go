@@ -51,11 +51,12 @@ func TestMigrate_BaselineAndRestart(t *testing.T) {
 		t.Fatal("restart erased data")
 	}
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_catalog.pg_tables
-		WHERE schemaname = current_schema() AND tablename <> 'goose_db_version'`).Scan(&count); err != nil {
+		WHERE schemaname = current_schema()
+		AND tablename NOT IN ('goose_db_version', 'outbox_goose_version', 'outbox_jobs')`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count < 11 {
-		t.Fatalf("application tables = %d, want at least 11", count)
+	if count < 10 {
+		t.Fatalf("application tables = %d, want at least 10 after removing email_jobs", count)
 	}
 	after, err := db.Status(ctx, pool, log)
 	if err != nil || len(after) != len(before) {
@@ -146,7 +147,7 @@ func TestMigrate_ConcurrentFirstBoots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(t.Context(), "SELECT count(*) FROM email_jobs"); err != nil {
+	if _, err := pool.Exec(t.Context(), "SELECT count(*) FROM registrations"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), "SELECT count(*) FROM outbox_jobs"); err != nil {
@@ -174,6 +175,41 @@ func TestMigrate_OutboxWaitsForApplicationSchema(t *testing.T) {
 	}
 }
 
+func TestMigrate_DropsLegacyQueueWithoutLosingRegistrations(t *testing.T) {
+	pool := dbtest.EmptyPool(t)
+	ctx, log := t.Context(), slog.New(slog.DiscardHandler)
+	if err := db.MigrateFS(ctx, pool, previousSchema(t), "m", log); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		WITH e AS (
+			INSERT INTO events (slug, title, starts_at, ends_at)
+			VALUES ('camp', 'Camp', now(), now() + interval '1 hour')
+			RETURNING id
+		), r AS (
+			INSERT INTO registrations (event_id, reference, contact_first_name, contact_last_name,
+				contact_email, total_cents, currency, hold_expires_at, checkout_key)
+			SELECT id, 'REF123', 'Ada', 'Lovelace', 'ada@example.com', 0, 'ZAR', now(), 'k' FROM e
+			RETURNING id
+		)
+		INSERT INTO email_jobs (registration_id, kind, payload)
+		SELECT id, 'confirmation', '\x01' FROM r
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, pool, log); err != nil {
+		t.Fatal(err)
+	}
+	var legacy bool
+	var registrations, jobs int
+	err := pool.QueryRow(ctx, `SELECT to_regclass('email_jobs') IS NOT NULL,
+		(SELECT count(*) FROM registrations WHERE reference = 'REF123'), (SELECT count(*) FROM outbox_jobs)`).
+		Scan(&legacy, &registrations, &jobs)
+	if err != nil || legacy || registrations != 1 || jobs != 0 {
+		t.Fatalf("legacy table = %v, registrations = %d, imported jobs = %d, error = %v", legacy, registrations, jobs, err)
+	}
+}
+
 func TestMigrate_BaselineDownAndUp(t *testing.T) {
 	pool := dbtest.Pool(t)
 	adapter := stdlib.OpenDBFromPool(pool)
@@ -182,8 +218,8 @@ func TestMigrate_BaselineDownAndUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The schema's foreign-key order must allow a complete local reset: every
-	// migration's Down, back to an empty database.
+	// The application's foreign-key order must allow every application Down.
+	// The outbox keeps its own schema and separate migration history.
 	if _, err := provider.DownTo(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}

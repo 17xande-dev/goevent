@@ -10,10 +10,11 @@ import (
 
 	"github.com/17xande-dev/goevent/internal/db/gen"
 	"github.com/17xande-dev/goevent/internal/events"
-	"github.com/17xande-dev/goevent/internal/outbox"
 	"github.com/17xande-dev/goevent/internal/registrations"
 	"github.com/17xande-dev/goevent/internal/ticket"
 	"github.com/17xande-dev/mailer"
+	"github.com/17xande-dev/outbox"
+	"github.com/jackc/pgx/v5"
 )
 
 // The emails, from queueing to sending.
@@ -26,6 +27,41 @@ import (
 // checkout carry the same manage link and ticket codes the registrant may
 // already have: both are derived from the registration, not stored.
 
+const (
+	kindConfirmation = "confirmation"
+	kindReceived     = "received"
+	kindNotify       = "notify"
+	kindResend       = "resend"
+
+	registrationSubjectPrefix = "registration:"
+)
+
+func registrationSubject(id string) string { return registrationSubjectPrefix + id }
+
+func (h *Handler) newMailQueue(store outbox.Store[pgx.Tx], opts outbox.Options) (*outbox.Queue[pgx.Tx], error) {
+	// A transport or template error can include credentials or ticket codes.
+	opts.Describe = func(error) string {
+		return "Email delivery failed; check mail configuration and retry."
+	}
+	email := outbox.Kind[pgx.Tx]{
+		Run:     h.deliver,
+		Timeout: func(context.Context, outbox.Job) time.Duration { return 30 * time.Second },
+	}
+	confirmation := email
+	confirmation.OnDone = func(ctx context.Context, tx pgx.Tx, job outbox.Job, _ string) error {
+		return gen.New(tx).MarkRegistrationEmailed(ctx, strings.TrimPrefix(job.Subject, registrationSubjectPrefix))
+	}
+	return outbox.New(store, map[string]outbox.Kind[pgx.Tx]{
+		kindConfirmation: confirmation,
+		kindReceived:     email,
+		kindNotify:       email,
+		kindResend:       email,
+	}, opts)
+}
+
+// MailQueue is the server's queue, constructed with the mail handlers above.
+func (h *Handler) MailQueue() *outbox.Queue[pgx.Tx] { return h.outbox }
+
 // hooks is what the registrations store runs inside a checkout.
 func (h *Handler) hooks() registrations.Hooks {
 	return registrations.Hooks{Confirmed: h.onConfirm(), AwaitingPayment: h.onAwaitingPayment}
@@ -34,15 +70,12 @@ func (h *Handler) hooks() registrations.Hooks {
 // onConfirm queues the registrant's confirmation and, when an organiser address
 // is configured, their copy.
 func (h *Handler) onConfirm() registrations.OnConfirm {
-	return func(ctx context.Context, q *gen.Queries, c registrations.Confirmation) error {
-		if h.outbox == nil {
-			return errors.New("handler: the email queue is not configured")
-		}
-		if err := h.outbox.Enqueue(ctx, q, c.Registration.ID, outbox.KindConfirmation, nil); err != nil {
+	return func(ctx context.Context, tx pgx.Tx, c registrations.Confirmation) error {
+		if err := h.enqueueOnce(ctx, tx, c.Registration.ID, kindConfirmation); err != nil {
 			return err
 		}
 		if h.cfg.NotifyEmail != "" {
-			return h.outbox.Enqueue(ctx, q, c.Registration.ID, outbox.KindNotify, nil)
+			return h.enqueueOnce(ctx, tx, c.Registration.ID, kindNotify)
 		}
 		return nil
 	}
@@ -50,46 +83,25 @@ func (h *Handler) onConfirm() registrations.OnConfirm {
 
 // onAwaitingPayment queues the acknowledgement a pay-later registrant gets:
 // how to pay, and no tickets yet.
-func (h *Handler) onAwaitingPayment(ctx context.Context, q *gen.Queries, r registrations.Registration) error {
+func (h *Handler) onAwaitingPayment(ctx context.Context, tx pgx.Tx, r registrations.Registration) error {
+	return h.enqueueOnce(ctx, tx, r.ID, kindReceived)
+}
+
+func (h *Handler) enqueueOnce(ctx context.Context, tx pgx.Tx, id, kind string) error {
 	if h.outbox == nil {
 		return errors.New("handler: the email queue is not configured")
 	}
-	return h.outbox.Enqueue(ctx, q, r.ID, outbox.KindReceived, nil)
+	subject := registrationSubject(id)
+	_, _, err := h.outbox.Enqueue(ctx, tx, outbox.Message{Kind: kind, Subject: subject, UniqueKey: subject + ":" + kind})
+	return mailQueueError("enqueue "+kind+" email", err)
 }
 
-// ProcessMail drains a bounded batch. Tests call it directly; the server calls
-// it on a timer, so no request ever waits for a mail server.
-func (h *Handler) ProcessMail(ctx context.Context) {
-	for range 20 {
-		found, err := h.outbox.DeliverOne(ctx, h.deliver)
-		if err != nil {
-			h.log.Error("email queue", "error", err)
-		}
-		if !found || ctx.Err() != nil {
-			return
-		}
+func mailQueueError(operation string, err error) error {
+	if err == nil {
+		return nil
 	}
-}
-
-// StartMailWorker runs ProcessMail every few seconds until ctx is cancelled,
-// and returns a wait function so shutdown joins the worker before closing the
-// pool. Unsent jobs survive a restart and are retried.
-func (h *Handler) StartMailWorker(ctx context.Context) func() {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			h.ProcessMail(ctx)
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-	return func() { <-done }
+	// A PostgreSQL diagnostic can include the row containing the sealed payload.
+	return fmt.Errorf("%s: %T", operation, err)
 }
 
 // mailTicket is one ticket as an email shows it.
@@ -111,13 +123,17 @@ type mailData struct {
 
 // deliver renders one queued email from the database and sends it.
 func (h *Handler) deliver(ctx context.Context, job outbox.Job) error {
-	reg, err := h.regs.Get(ctx, job.RegistrationID)
+	id, ok := strings.CutPrefix(job.Subject, registrationSubjectPrefix)
+	if !ok || id == "" {
+		return outbox.Permanent(errors.New("email job has no registration subject"))
+	}
+	reg, err := h.regs.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("email for registration %s: %w", job.RegistrationID, err)
+		return fmt.Errorf("load registration for email: %w", err)
 	}
 	e, err := h.events.Get(ctx, reg.EventID)
 	if err != nil {
-		return fmt.Errorf("email for registration %s: event: %w", reg.ID, err)
+		return fmt.Errorf("load event for email: %w", err)
 	}
 	data := mailData{
 		SiteName: h.cfg.SiteName, Event: e, Registration: reg,
@@ -126,7 +142,7 @@ func (h *Handler) deliver(ctx context.Context, job outbox.Job) error {
 	}
 
 	switch job.Kind {
-	case outbox.KindNotify:
+	case kindNotify:
 		text, err := h.tmpl.Text("email_notify.txt", data)
 		if err != nil {
 			return err
@@ -137,11 +153,11 @@ func (h *Handler) deliver(ctx context.Context, job outbox.Job) error {
 		}
 		return h.mail.Send(ctx, mailer.Message{To: []string{h.cfg.NotifyEmail}, Subject: oneLine(subject), Text: text})
 
-	case outbox.KindReceived:
+	case kindReceived:
 		return h.sendRendered(ctx, reg, "email_received", data,
 			"Registration received for "+e.Title+" — payment needed", nil)
 
-	case outbox.KindConfirmation, outbox.KindResend:
+	case kindConfirmation, kindResend:
 		attendees, err := h.regs.Attendees(ctx, reg.ID)
 		if err != nil {
 			return err

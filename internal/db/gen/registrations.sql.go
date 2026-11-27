@@ -1010,6 +1010,15 @@ func (q *Queries) MarkPaymentPaid(ctx context.Context, id string) error {
 	return err
 }
 
+const markRegistrationEmailed = `-- name: MarkRegistrationEmailed :exec
+UPDATE registrations SET emailed = TRUE WHERE id = $1
+`
+
+func (q *Queries) MarkRegistrationEmailed(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, markRegistrationEmailed, id)
+	return err
+}
+
 const paidTotal = `-- name: PaidTotal :one
 SELECT COALESCE(sum(amount_cents), 0)::bigint AS paid
 FROM payments WHERE registration_id = $1 AND status = 'paid'

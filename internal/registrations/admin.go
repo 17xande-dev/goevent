@@ -148,7 +148,7 @@ func (s *Store) RecordPayment(ctx context.Context, m Manual, onConfirm OnConfirm
 		return false, err
 	}
 	if ok && onConfirm != nil {
-		if err := onConfirm(ctx, q, conf); err != nil {
+		if err := onConfirm(ctx, tx, conf); err != nil {
 			return false, err
 		}
 	}

@@ -223,3 +223,6 @@ SELECT count(*) FILTER (WHERE a.status = 'active')::int AS expected,
 FROM attendees a
 JOIN registrations r ON r.id = a.registration_id
 WHERE r.event_id = $1 AND r.status = 'confirmed';
+
+-- name: MarkRegistrationEmailed :exec
+UPDATE registrations SET emailed = TRUE WHERE id = $1;

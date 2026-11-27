@@ -2,14 +2,18 @@ package handler
 
 import (
 	"encoding/csv"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/17xande-dev/goevent/internal/auth"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/17xande-dev/outbox"
+	"github.com/17xande-dev/outbox/outboxtest"
 )
 
 // payLater registers one adult to pay by EFT and returns the registration.
@@ -31,7 +35,7 @@ func TestAdminRegistrations_RecordingTheEFTConfirmsAndSendsTickets(t *testing.T)
 	s := newApp(t)
 	_, reg := payLater(t, s)
 	signIn(t, s.srv)
-	s.handler.ProcessMail(t.Context()) // the "received" acknowledgement
+	outboxtest.Drain(t, s.outbox) // the "received" acknowledgement
 
 	res, _ := post(t, s.srv, registrationPath(reg.ID)+"/payments", url.Values{
 		"method": {"eft"}, "amount": {"450.00"}, "note": {"FNB ref 1234"},
@@ -43,7 +47,7 @@ func TestAdminRegistrations_RecordingTheEFTConfirmsAndSendsTickets(t *testing.T)
 	if got.Status != registrations.StatusConfirmed {
 		t.Fatalf("status = %q after recording the whole amount", got.Status)
 	}
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 	var tickets int
 	for _, m := range s.mail.To("ada@example.com") {
 		if strings.HasPrefix(m.Subject, "Your tickets") {
@@ -107,7 +111,7 @@ func TestAdminRegistrations_ResendOnlyForConfirmedAndSkipsCancelledPeople(t *tes
 	submit(t, s, e, registerForm(t, s, e, map[string]int{child.ID: 2}))
 	reg := onlyRegistration(t, s)
 	signIn(t, s.srv)
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 
 	people, _ := s.regs.Attendees(t.Context(), reg.ID)
 	post(t, s.srv, registrationPath(reg.ID)+"/attendees/"+people[1].ID+"/cancel", url.Values{})
@@ -115,7 +119,7 @@ func TestAdminRegistrations_ResendOnlyForConfirmedAndSkipsCancelledPeople(t *tes
 	if loc := res.Header.Get("Location"); !strings.Contains(loc, "notice=resent") {
 		t.Fatalf("resend went to %q", loc)
 	}
-	s.handler.ProcessMail(t.Context())
+	outboxtest.Drain(t, s.outbox)
 	sent := s.mail.To("ada@example.com")
 	if len(sent) != 2 || len(sent[1].Inline) != 1 {
 		t.Fatalf("after resend: %d emails, the last with %d codes", len(sent), len(sent[len(sent)-1].Inline))
@@ -133,6 +137,62 @@ func TestAdminRegistrations_ResendOnlyForConfirmedAndSkipsCancelledPeople(t *tes
 	res, _ = post(t, s2.srv, registrationPath(pending.ID)+"/resend", url.Values{})
 	if loc := res.Header.Get("Location"); !strings.Contains(loc, "problem=not_confirmed") {
 		t.Errorf("resend for a pending registration went to %q", loc)
+	}
+}
+
+func TestAdminRegistrations_RetryDeadAndPendingEmailsForOnlyThisRegistration(t *testing.T) {
+	s := newApp(t)
+	e, _, free := published(t, s, 10)
+	submit(t, s, e, registerForm(t, s, e, map[string]int{free.ID: 1}))
+	reg := onlyRegistration(t, s)
+	subject := "registration:" + reg.ID
+	ctx := t.Context()
+	signIn(t, s.srv)
+
+	s.mail.Err = errors.New("relay unavailable")
+	for range 6 {
+		if n := outboxtest.Drain(t, s.outbox); n != 1 {
+			t.Fatalf("ran %d jobs, want one due attempt", n)
+		}
+		s.clock.Advance(7 * time.Hour)
+	}
+	jobs := outboxtest.Enqueued(t, s.outbox, outbox.Filter{Subject: subject})
+	if len(jobs) != 1 || jobs[0].State != outbox.StateDead || jobs[0].Attempts != 6 {
+		t.Fatalf("after six failures: %+v", jobs)
+	}
+	dead := jobs[0].ID
+
+	getRes, page := get(t, s.srv, registrationPath(reg.ID))
+	if getRes.StatusCode != http.StatusOK || !strings.Contains(page, ">Dead</td>") || !strings.Contains(page, ">6/6</td>") {
+		t.Fatalf("the registration page did not display the dead job: %d", getRes.StatusCode)
+	}
+	runAt := s.clock.Now().Add(time.Hour)
+	pending, _, err := s.outbox.EnqueueNow(ctx, outbox.Message{Kind: "resend", Subject: subject, RunAt: runAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := s.outbox.EnqueueNow(ctx, outbox.Message{Kind: "resend", Subject: "registration:other", RunAt: runAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _ := post(t, s.srv, registrationPath(reg.ID)+"/emails/retry", url.Values{})
+	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != registrationPath(reg.ID)+"?notice=retrying" {
+		t.Fatalf("retry: status %d, redirect %q", res.StatusCode, res.Header.Get("Location"))
+	}
+	got, err := s.outbox.Get(ctx, dead)
+	if err != nil || got.State != outbox.StatePending || got.Attempts != 0 || got.RetryCount != 1 || got.RetriedBy != s.owner.ID {
+		t.Fatalf("dead job reset and audit: %+v %v", got, err)
+	}
+	untouched, err := s.outbox.Get(ctx, other)
+	if err != nil || !untouched.RunAt.After(s.clock.Now()) {
+		t.Fatalf("another registration's pending job was rushed: %+v %v", untouched, err)
+	}
+	s.mail.Err = nil
+	if n := outboxtest.Drain(t, s.outbox); n != 2 || len(s.mail.To("ada@example.com")) != 2 {
+		t.Fatalf("ran %d jobs; want the retried confirmation and the rushed resend", n)
+	}
+	if got, err := s.outbox.Get(ctx, pending); err != nil || got.State != outbox.StateDone {
+		t.Fatalf("scheduled resend after retry: %+v %v", got, err)
 	}
 }
 

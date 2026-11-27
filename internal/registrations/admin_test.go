@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/17xande-dev/goevent/internal/auth"
-	"github.com/17xande-dev/goevent/internal/db/gen"
 	"github.com/17xande-dev/goevent/internal/events"
 	"github.com/17xande-dev/goevent/internal/registrations"
+	"github.com/jackc/pgx/v5"
 )
 
 // admin makes an administrator for recorded_by to point at.
@@ -31,7 +31,7 @@ func TestRecordPayment_PartsThenFullConfirmsOnce(t *testing.T) {
 	id := res.Registration.ID // 900.00 owed
 
 	calls := 0
-	hook := func(context.Context, *gen.Queries, registrations.Confirmation) error { calls++; return nil }
+	hook := func(context.Context, pgx.Tx, registrations.Confirmation) error { calls++; return nil }
 	m := registrations.Manual{RegistrationID: id, Method: registrations.MethodEFT, AmountCents: 50000, RecordedBy: who}
 	if ok, err := f.regs.RecordPayment(t.Context(), m, hook); err != nil || ok {
 		t.Fatalf("first part = %v, %v; want recorded, not confirmed", ok, err)
