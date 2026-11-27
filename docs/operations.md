@@ -52,7 +52,8 @@ tick. A sweep that removes something logs how many at info level.
 
 Mail worker failures are visible per registration in the admin. Jobs that exhaust six
 attempts are shown as **Dead** and can be retried there, or from the queue page at
-`/admin/mail`, which lists every dead email across registrations. The `job transition` log records
+`/admin/mail`, which lists the newest 100 dead emails across registrations and says how many more there are
+when there are over 100. The `job transition` log records
 the outcome and error class without the payload or the transport's error text.
 
 ## When something goes wrong
