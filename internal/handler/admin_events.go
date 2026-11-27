@@ -51,6 +51,9 @@ type eventsPage struct {
 	Events []events.Event
 	Notice string
 	Now    time.Time
+	// DeadMail is how many emails gave up; the page links to them when it is
+	// not zero, because nobody else will tell an organiser a ticket never went.
+	DeadMail int
 }
 
 // eventFormPage is the details form, alone for a new event and as part of the
@@ -83,12 +86,22 @@ func (h *Handler) adminEventList(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, "admin_events", eventsPage{
+	data := eventsPage{
 		page:   h.newPage(r, "Events"),
 		Events: list,
 		Notice: noticeFor(r, eventNotices),
 		Now:    time.Now(),
-	})
+	}
+	// The count is a courtesy: a queue that cannot be read must not take the
+	// events list down with it.
+	if h.outbox != nil {
+		if stats, err := h.outbox.Stats(r.Context()); err != nil {
+			h.logger(r).Error("counting dead emails failed", "error", mailQueueError("count emails", err))
+		} else {
+			data.DeadMail = stats.Dead
+		}
+	}
+	h.render(w, r, http.StatusOK, "admin_events", data)
 }
 
 func (h *Handler) adminEventNew(w http.ResponseWriter, r *http.Request) {

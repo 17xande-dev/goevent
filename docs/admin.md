@@ -9,6 +9,7 @@ The admin lives at `/admin`. It lands on the events list, or for a `checkin` acc
 | An event's attendees as CSV | `GET /admin/events/{id}/attendees.csv` | `read` |
 | The door | `/admin/checkin`, `/admin/events/{id}/checkin`; see [Check-in](checkin.md) | `checkin` |
 | Registrations: record cash or EFT, cancel a registration or one attendee, resend tickets, retry email | `/admin/registrations`, `/admin/registrations/{id}/…` | `registrations.write` |
+| The email queue: counts and the dead emails, each linked to its registration, with a retry | `GET /admin/mail` (`read`), `POST /admin/mail/{id}/retry` | `registrations.write` to retry |
 | Administrator accounts | `/admin/users` | `users.write` |
 | Your own profile and password | `/admin/account` | any signed-in account |
 

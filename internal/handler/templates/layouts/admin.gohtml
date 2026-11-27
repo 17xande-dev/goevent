@@ -25,7 +25,8 @@
         route refuses the same request whatever this renders. See requirePerm.
       */}}
       {{if .Can "read"}}<a href="/admin/events">Events</a>
-      <a href="/admin/registrations">Registrations</a>{{end}}
+      <a href="/admin/registrations">Registrations</a>
+      <a href="/admin/mail">Email</a>{{end}}
       {{if .Can "checkin"}}<a href="/admin/checkin">Check-in</a>{{end}}
       {{if .Can "users.write"}}<a href="/admin/users">Users</a>{{end}}
       <a href="/events">Public site</a>

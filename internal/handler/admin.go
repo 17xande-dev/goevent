@@ -358,6 +358,11 @@ func (h *Handler) RegisterAdmin(mux *http.ServeMux, protect middleware.Middlewar
 	admin("POST /admin/registrations/{id}/attendees/{attendeeID}/cancel", auth.PermRegistrationsWrite, h.adminAttendeeCancel)
 	admin("POST /admin/registrations/{id}/resend", auth.PermRegistrationsWrite, h.adminRegistrationResend)
 	admin("POST /admin/registrations/{id}/emails/retry", auth.PermRegistrationsWrite, h.adminRegistrationRetryEmail)
+	// The email queue's dead letters. See admin_mail.go. Viewing is read; the
+	// retry is registrations.write, like the per-registration retry it shares a
+	// meaning with.
+	admin("GET "+mailPath, auth.PermRead, h.adminMail)
+	admin("POST "+mailPath+"/{id}/retry", auth.PermRegistrationsWrite, h.adminMailRetry)
 	// Administrator accounts. See internal/handler/admin_users.go — accounts are
 	// disabled, never deleted, and nobody may change their own role, disable
 	// themselves, or reset their own password from these pages.

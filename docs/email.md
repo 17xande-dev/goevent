@@ -100,6 +100,16 @@ pending with a fresh attempt budget and the administrator recorded on the retry.
 Already-sent and running jobs are unaffected. **Send the tickets again**, shown on a
 confirmed registration, queues a `resend`. Both need the `registrations.write` permission.
 
+After an outage, use the queue page (`/admin/mail`, **Email** in the admin menu) instead
+of opening registrations one by one. It shows the pending, running, done and dead counts
+and lists the dead emails with their kind, attempts, the fixed failure reason and a link to
+the registration they belong to. Each row has a **Retry** button (`registrations.write`,
+CSRF-protected); it resets that one job to pending with a fresh attempt budget and records
+who did it. If the job is no longer dead (someone else retried it, or the page is old) the
+page says so and changes nothing. The list shows the newest 100 dead emails and says when
+there are more; retrying some makes the rest appear. The events page shows a link with the
+dead count whenever it is not zero.
+
 ## SMTP
 
 ```sh

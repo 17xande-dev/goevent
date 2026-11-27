@@ -1,0 +1,45 @@
+{{define "content"}}
+
+<h1>Email queue</h1>
+
+{{if .Notice}}<p class="notice">{{.Notice}}</p>{{end}}
+
+<p>Pending: {{.Stats.Pending}} · Running: {{.Stats.Running}} · Done: {{.Stats.Done}} · Dead: {{.Stats.Dead}}</p>
+
+<h2>Dead emails</h2>
+<p class="hint"><small>An email goes dead after six failed attempts and is not tried again until
+someone retries it here. A retry gives it a fresh set of attempts.</small></p>
+
+{{if .Dead}}
+{{if .Capped}}<p class="muted">Showing the newest {{.Cap}} of {{.Stats.Dead}}. Retrying some makes the rest appear.</p>{{end}}
+<div class="scroll-x">
+  <table>
+    <thead>
+      <tr><th>Email</th><th>Registration</th><th class="num">Attempts</th><th>Reason</th><th>Failed</th><th></th></tr>
+    </thead>
+    <tbody>
+    {{range .Dead}}
+      <tr>
+        <td>{{.Kind}}</td>
+        <td>{{if .RegistrationID}}<a href="/admin/registrations/{{.RegistrationID}}">Open registration</a>{{else}}<small class="muted">none</small>{{end}}</td>
+        <td class="num">{{.Attempts}}/{{.MaxAttempts}}</td>
+        <td>{{.LastError}}</td>
+        <td><small>{{.FinishedAt.Format "2 Jan 15:04"}}</small></td>
+        <td>
+          {{if $.Can "registrations.write"}}
+          <form method="post" action="/admin/mail/{{.ID}}/retry">
+            {{template "csrf" $.CSRFToken}}
+            <button class="quiet" type="submit">Retry</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No dead emails.</p>
+{{end}}
+
+{{end}}
