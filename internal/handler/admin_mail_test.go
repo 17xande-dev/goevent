@@ -178,8 +178,10 @@ func TestAdminMail_MoreThanOnePageOfDeadJobsIsCappedAndSaysSo(t *testing.T) {
 	signIn(t, s.srv)
 	const total = deadMailLimit + 1
 	for i := range total {
-		// A subject with no registration behind it: the job dies on its own,
-		// and the row has no link rather than a broken one.
+		// A subject whose registration does not exist: the job dies on its
+		// own. The row still links to it, because the link is built from the
+		// subject's ID alone, and that link leads to a 404. The no-link branch
+		// (a subject without the registration prefix) is not reached here.
 		if _, _, err := s.outbox.EnqueueNow(t.Context(), outbox.Message{Kind: kindResend, Subject: "registration:gone-" + strconv.Itoa(i)}); err != nil {
 			t.Fatal(err)
 		}
