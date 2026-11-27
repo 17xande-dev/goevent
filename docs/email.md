@@ -91,6 +91,35 @@ tickets intact. `-migrate` and normal startup apply the application's migrations
 then the outbox migrations, which are recorded in `outbox_goose_version`. Each migration
 provider takes its own PostgreSQL advisory lock.
 
+### Behaviour that differs from the queue this replaced
+
+Beyond dead-after-six, the keep-completed-jobs rule and the lock-free send described
+above, the cut-over to the shared outbox changed these, none of them a defect:
+
+- **A repeated once-only email is ignored.** The confirmation, the pay-later
+  acknowledgement and the organiser's copy are unique per registration. Queueing one a
+  second time used to violate a unique index and roll back the whole checkout or payment
+  transaction; now the second enqueue does nothing, silently, and the transaction
+  continues. Nothing in the app queues one twice today. The admin resend has no unique key
+  and can be repeated.
+- **The email list is newest first.** A registration's **Emails** table was ordered by
+  id; it is now ordered by creation time, newest at the top. It lists every job for the
+  registration, with no page limit, so old failures stay visible however often the tickets
+  were resent.
+- **No cascade from registration to job.** The old table deleted a registration's jobs
+  with it. The app never deletes a registration, and an event with registrations cannot be
+  deleted, so this is harmless today; a job whose registration is gone would end **Dead**
+  after six attempts with "load registration".
+- **One 30-second timeout covers the whole job.** Reading the registration, rendering the
+  email, making the QR images and the send share it. The old queue allowed 30 seconds for
+  the send alone inside a 35-second transaction. Settling the result has its own five
+  seconds. A server given a grace period shorter than about 35 seconds on stop can be killed
+  with a send in flight; the lease then expires and the job runs again.
+- **The first retry comes after about a minute,** not 30 seconds, and later ones are
+  spaced as listed above, with jitter, instead of doubling for ever.
+- **The sealer is kept although payloads are empty,** so that a future payload needs no
+  extra care. The key derivation and key ID are pinned by a test.
+
 ### Seeing and retrying
 
 The registration's admin page (`/admin/registrations/{id}`) lists its email jobs under
