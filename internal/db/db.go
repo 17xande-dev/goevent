@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/17xande-dev/outbox/pgxstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -41,9 +42,16 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// Migrate applies embedded migrations in version order, skipping completed ones.
+// Migrate applies the embedded application migrations, then the outbox history.
+// Each provider takes its own session advisory lock to serialize concurrent boots.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
-	return MigrateFS(ctx, pool, migrationsFS, "migrations", log)
+	if pool.Config().MaxConns < 2 {
+		return fmt.Errorf("db: migrations require a pool of at least two connections")
+	}
+	if err := MigrateFS(ctx, pool, migrationsFS, "migrations", log); err != nil {
+		return err
+	}
+	return pgxstore.Migrate(ctx, pool, log)
 }
 
 // MigrateFS lets tests exercise future schema changes and their failure modes.

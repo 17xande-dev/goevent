@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strings"
@@ -148,6 +149,29 @@ func TestMigrate_ConcurrentFirstBoots(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), "SELECT count(*) FROM email_jobs"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(t.Context(), "SELECT count(*) FROM outbox_jobs"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMigrate_OutboxWaitsForApplicationSchema(t *testing.T) {
+	pool := dbtest.EmptyPool(t)
+	ctx, log := t.Context(), slog.New(slog.DiscardHandler)
+	// A conflicting application table makes the baseline fail. The outbox
+	// must still be untouched, including its independent migration history.
+	if _, err := pool.Exec(ctx, "CREATE TABLE events (id INT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx, pool, log); err == nil {
+		t.Fatal("conflicting application baseline succeeded")
+	}
+	var installed bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('outbox_goose_version') IS NOT NULL").Scan(&installed); err != nil {
+		t.Fatal(err)
+	}
+	if installed {
+		t.Fatal("outbox migration ran before the application migration succeeded")
+	}
 }
 
 func TestMigrate_BaselineDownAndUp(t *testing.T) {
@@ -257,8 +281,16 @@ func TestMigrate_AdminSessionsLastSeen(t *testing.T) {
 		}
 	}
 
+	// Exercise this exact upgrade, even when the current binary has newer
+	// migrations that deliberately change other tables.
+	lastSeenSQL, err := os.ReadFile("migrations/0002_admin_sessions_last_seen.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	throughLastSeen := previousSchema(t)
+	throughLastSeen["m/0002_admin_sessions_last_seen.sql"] = &fstest.MapFile{Data: lastSeenSQL}
 	started := time.Now()
-	if err := db.Migrate(ctx, pool, log); err != nil {
+	if err := db.MigrateFS(ctx, pool, throughLastSeen, "m", log); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if after := tableCounts(t, pool); fmt.Sprint(after) != fmt.Sprint(before) {
@@ -291,12 +323,8 @@ func TestMigrate_AdminSessionsLastSeen(t *testing.T) {
 	}
 
 	// A second boot is a no-op.
-	if err := db.Migrate(ctx, pool, log); err != nil {
+	if err := db.MigrateFS(ctx, pool, throughLastSeen, "m", log); err != nil {
 		t.Fatalf("second migrate: %v", err)
-	}
-	status, err := db.Status(ctx, pool, log)
-	if err != nil || len(status) != 2 || status[1].State != "applied" {
-		t.Fatalf("status after two boots: %+v %v", status, err)
 	}
 
 	// The previous binary (which embeds only 0001) against the migrated database:
@@ -317,9 +345,17 @@ func TestMigrate_AdminSessionsLastSeen(t *testing.T) {
 	// every session still there.
 	adapter := stdlib.OpenDBFromPool(pool)
 	defer adapter.Close()
-	provider, err := goose.NewProvider(goose.DialectPostgres, adapter, os.DirFS("migrations"))
+	migrations, err := fs.Sub(throughLastSeen, "m")
 	if err != nil {
 		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, adapter, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := provider.Status(ctx)
+	if err != nil || len(status) != 2 || status[1].State != "applied" {
+		t.Fatalf("status after two boots: %+v %v", status, err)
 	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatalf("down: %v", err)
@@ -347,7 +383,7 @@ func TestMigrate_AdminSessionsLastSeen(t *testing.T) {
 		t.Fatalf("row counts changed by the rollback: before %v, after %v", before, after)
 	}
 	// And forward again.
-	if err := db.Migrate(ctx, pool, log); err != nil {
+	if err := db.MigrateFS(ctx, pool, throughLastSeen, "m", log); err != nil {
 		t.Fatalf("migrate after down: %v", err)
 	}
 }
