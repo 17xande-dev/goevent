@@ -361,3 +361,30 @@ func TestAdminEventExport_EscapesEachColumnOnItsOwn(t *testing.T) {
 		}
 	}
 }
+
+// The registration page lists every email job of the registration, however many
+// resends there have been: an old failure must not scroll off a page limit and
+// leave an organiser believing the tickets went.
+func TestAdminRegistrations_EmailListHasNoPageCap(t *testing.T) {
+	s := newApp(t)
+	e, _, free := published(t, s, 10)
+	submit(t, s, e, registerForm(t, s, e, map[string]int{free.ID: 1}))
+	reg := onlyRegistration(t, s)
+	signIn(t, s.srv)
+
+	// The confirmation is already queued; add more than the queue's default page
+	// of 100, all for this registration (resend has no unique key).
+	const resends = 104
+	for range resends {
+		if _, _, err := s.outbox.EnqueueNow(t.Context(), outbox.Message{Kind: kindResend, Subject: registrationSubject(reg.ID)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, page := get(t, s.srv, registrationPath(reg.ID))
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET = %d", res.StatusCode)
+	}
+	if rows := strings.Count(page, `<td class="num">0/`); rows != resends+1 {
+		t.Errorf("the page lists %d email jobs, want all %d", rows, resends+1)
+	}
+}
