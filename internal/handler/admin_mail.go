@@ -85,7 +85,7 @@ func (h *Handler) adminMailRetry(w http.ResponseWriter, r *http.Request) {
 	}
 	notice := "not_dead"
 	if retried {
-		h.outbox.Wake()
+		// Retry has already woken the worker.
 		notice = "retried"
 	}
 	http.Redirect(w, r, mailPath+"?notice="+url.QueryEscape(notice), http.StatusSeeOther)
