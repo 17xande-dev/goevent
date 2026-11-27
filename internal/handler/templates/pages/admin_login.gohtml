@@ -14,11 +14,13 @@
   <div class="field">
     <label for="email">Email</label>
     <input id="email" type="email" name="email" value="{{.Email}}"
-           autocomplete="username" autocapitalize="none" autofocus required>
+           autocomplete="username" autocapitalize="none"{{if not .Email}} autofocus{{end}} required>
   </div>
   <div class="field">
     <label for="password">Password</label>
-    <input id="password" type="password" name="password" autocomplete="current-password" required>
+    {{/* Focus follows the work left to do: the email when the form is empty,
+         the password once a rejected attempt has put the email back. */}}
+    <input id="password" type="password" name="password" autocomplete="current-password"{{if .Email}} autofocus{{end}} required>
   </div>
   <div class="actions">
     <button type="submit">Sign in</button>

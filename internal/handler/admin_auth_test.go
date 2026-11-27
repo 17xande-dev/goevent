@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -124,6 +125,67 @@ func TestAdminAuth_RejectedFormKeepsEmailNotPassword(t *testing.T) {
 	}
 	if strings.Contains(body, "the wrong password entirely") {
 		t.Error("the rejected form carries the password back into the page")
+	}
+}
+
+// inputTag returns the opening tag of the form control with the given id.
+func inputTag(t *testing.T, body, id string) string {
+	t.Helper()
+	i := strings.Index(body, `<input id="`+id+`"`)
+	if i < 0 {
+		t.Fatalf("no input with id %q in the page", id)
+	}
+	j := strings.Index(body[i:], ">")
+	if j < 0 {
+		t.Fatalf("unterminated input %q", id)
+	}
+	return body[i : i+j+1]
+}
+
+// The field that needs the person next has focus: the email on a fresh page,
+// the password once a rejected attempt has put the email back. Unknown address
+// and wrong password must be indistinguishable here too.
+func TestAdminAuth_LoginFocusFollowsTheEmail(t *testing.T) {
+	s := newApp(t)
+
+	_, body := get(t, s.srv, "/admin/login")
+	if !strings.Contains(inputTag(t, body, "email"), "autofocus") {
+		t.Error("fresh login page: the email field does not have focus")
+	}
+	if strings.Contains(inputTag(t, body, "password"), "autofocus") {
+		t.Error("fresh login page: the password field has focus")
+	}
+
+	var markup []string
+	for name, email := range map[string]string{
+		"wrong password":  testEmail,
+		"unknown address": `nobody<&>@example.com`,
+	} {
+		res, body := post(t, s.srv, "/admin/login", url.Values{
+			"email":    {email},
+			"password": {"hunter2-not-the-password"},
+		})
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s = %d, want 401", name, res.StatusCode)
+		}
+		emailTag, passTag := inputTag(t, body, "email"), inputTag(t, body, "password")
+		if strings.Contains(emailTag, "autofocus") {
+			t.Errorf("%s: the email field has focus after a rejected attempt", name)
+		}
+		if !strings.Contains(passTag, "autofocus") {
+			t.Errorf("%s: the password field does not have focus after a rejected attempt", name)
+		}
+		if want := `value="` + html.EscapeString(email) + `"`; !strings.Contains(emailTag, want) {
+			t.Errorf("%s: email tag %q lacks %s", name, emailTag, want)
+		}
+		if strings.Contains(body, "hunter2-not-the-password") {
+			t.Errorf("%s: the submitted password is echoed", name)
+		}
+		// Same focus markup whichever of the two it was: only the value differs.
+		markup = append(markup, passTag)
+	}
+	if len(markup) == 2 && markup[0] != markup[1] {
+		t.Errorf("password tag differs between failure kinds: %q vs %q", markup[0], markup[1])
 	}
 }
 
