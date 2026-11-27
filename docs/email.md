@@ -10,8 +10,10 @@ Graph when it is configured, SMTP otherwise. The two are not layered.
 
 ## What gets sent
 
-Every email is a job in the `email_jobs` table naming **a registration and a kind**. There
-are four kinds ([`internal/outbox`](../internal/outbox/outbox.go)):
+Every email is a job in `outbox_jobs`, managed by
+[`github.com/17xande-dev/outbox`](https://github.com/17xande-dev/outbox). It names a
+registration as `registration:<id>` and one of four kinds
+([`internal/handler/mail.go`](../internal/handler/mail.go)):
 
 | Kind | To | When | Carries |
 |---|---|---|---|
@@ -20,9 +22,10 @@ are four kinds ([`internal/outbox`](../internal/outbox/outbox.go)):
 | `notify` | `NOTIFY_EMAIL` | alongside every `confirmation`, when `NOTIFY_EMAIL` is set | the reference, contact, total and an admin link. Plain text. Subject and body start with `OVERSOLD` when the registration was [oversold](payments.md#late-payments-and-overselling) |
 | `resend` | the person who registered | an admin presses **Send the tickets again** on a confirmed registration | the same as `confirmation` |
 
-`confirmation`, `received` and `notify` are unique per registration (a partial unique index
-on `(registration_id, kind)`), so a replayed payment notification cannot queue them twice.
-`resend` is not, and can be sent as often as an admin asks.
+`confirmation`, `received` and `notify` each get the unique key `registration:<id>:<kind>`,
+so a repeated enqueue cannot add another job of that kind. `resend` has no unique key
+and can be sent as often as an admin asks. The application keeps completed jobs so their
+unique keys remain reserved.
 
 The `confirmation` and `received` mails have a plain-text part and an HTML part. The
 `notify` mail is plain text only.
@@ -55,36 +58,47 @@ confirms a free registration, the payment that confirms a paid one, the checkout
 creates a pay-later one. If the job cannot be written, the transaction rolls back; for a
 gateway notification that means a `503`, so the gateway retries.
 
-A worker in the server process ([`StartMailWorker`](../internal/handler/mail.go)) checks
-for due jobs every five seconds and sends up to twenty per pass. Each job is claimed with
-`SELECT … FOR UPDATE SKIP LOCKED` and its row lock is held during a send bounded to 30
-seconds, so several instances never send the same job. No request ever waits for a mail
-server.
+A worker in each server process checks for due jobs every three seconds and is woken
+after a successful enqueue. It claims a job with a two-minute lease and commits the claim
+before sending, so no row lock or connection is held across the send. Each delivery has a
+30-second timeout. A successful confirmation marks the registration emailed in the same
+transaction that marks the job done. No request waits for a mail server.
 
-- **Encrypted.** Each job has a payload sealed with AES-256-GCM under a key derived from
-  `SECRET_KEY`, bound to its registration id and kind so a payload moved to another row
-  fails to decrypt. The payloads written today are empty, since emails are rendered at send
-  time; the encryption is there so a future job carrying something sensitive needs no
-  extra care. A successful send clears the payload.
-- **Retried.** A failure records the attempt and a generic reason, and the job is retried
-  with exponential backoff from 30 seconds up to one hour. Unsent jobs survive a restart.
-  The worker never logs payloads or the transport's error text, since either could carry a
-  ticket code or a credential; the real cause is visible to whoever runs the mail relay.
+- **Encrypted.** Each payload is sealed with AES-256-GCM under key ID `1`, derived from
+  `SECRET_KEY` and authenticated with its kind, subject and unique key. The application
+  writes an empty payload and renders the email from the database at send time. A
+  successful send clears the stored ciphertext.
+- **Retried.** A failure records a generic reason, then waits about 1 minute, 5 minutes,
+  30 minutes, 2 hours and 6 hours before succeeding or reaching **Dead** on the sixth
+  failed attempt. Unsent jobs survive restarts. Worker failures are logged by error class;
+  panics are contained and their values are omitted. Payloads and transport error text
+  can carry ticket codes or credentials and are not logged.
 - **At least once.** If the relay accepts a message and the process dies before recording
-  success, the job is sent again. Payment and confirmation are idempotent; a duplicate
-  email is the worst case.
-- **A key change strands the queue.** A job sealed under a previous `SECRET_KEY` fails with
-  "Unable to decrypt queued email. Check SECRET_KEY." Drain the queue before rotating the
-  key, and remember that rotating it also invalidates every manage link and ticket already
-  sent ([Configuration](configuration.md#secret_key)).
+  success, a later attempt can send it again. This can also happen if the confirmation's
+  database hook fails. A cancelled delivery during graceful shutdown can be retried
+  without spending an attempt.
+- **A key change strands the queue.** A job sealed under a previous `SECRET_KEY` goes
+  straight to **Dead** with "cannot open payload: check the key"; it never reaches the
+  mail transport. Drain the queue before rotating the key. Rotating it also invalidates
+  every manage link and ticket already sent ([Configuration](configuration.md#secret_key)).
+
+### Upgrading a development database
+
+Migration `0003_drop_email_jobs` removes the old `email_jobs` table and its indexes.
+**Existing development databases lose pending jobs and old email history.** Drain the old
+queue first if those messages need to go out. The migration leaves registrations and
+tickets intact. `-migrate` and normal startup apply the application's migrations first,
+then the outbox migrations, which are recorded in `outbox_goose_version`. Each migration
+provider takes its own PostgreSQL advisory lock.
 
 ### Seeing and retrying
 
 The registration's admin page (`/admin/registrations/{id}`) lists its email jobs under
-**Emails**: kind, attempts, when it was sent, and the last error. **Retry failed emails**
-makes every unsent job for that registration due now; it does not resend what was already
-sent. **Send the tickets again**, shown on a confirmed registration, queues a `resend`.
-Both need the `registrations.write` permission.
+**Emails**: kind, state (including **Dead**), attempts, when it was sent, and the last
+error. **Retry failed emails** brings pending jobs forward and resets dead jobs to
+pending with a fresh attempt budget and the administrator recorded on the retry.
+Already-sent and running jobs are unaffected. **Send the tickets again**, shown on a
+confirmed registration, queues a `resend`. Both need the `registrations.write` permission.
 
 ## SMTP
 

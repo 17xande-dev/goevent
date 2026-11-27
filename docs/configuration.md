@@ -56,21 +56,21 @@ openssl rand -hex 32
 It is the server's one secret. `deriveKeys` in [`main.go`](../main.go) derives three
 separate keys from it, each an HMAC of the secret under its own label:
 
-- the AES-256-GCM key that encrypts queued email (`goevent/outbox/v1`);
+- the AES-256-GCM key that seals outbox payloads (`goevent/outbox/v1`, key ID `1`);
 - the key that signs registrants' manage links (`goevent/manage-link/v1`);
 - the key that signs ticket codes (`goevent/ticket/v1`).
 
 Manage links and ticket codes are not stored anywhere; they are recomputed from the key
 whenever they are needed. So **changing `SECRET_KEY` invalidates every manage link and
 every ticket QR code already emailed**, and any email still queued becomes undecryptable
-(the job fails with "Unable to decrypt queued email. Check SECRET_KEY."). Keep it, and back
+(the job goes dead with "cannot open payload: check the key"). Keep it, and back
 it up with the database. See [Security](security.md#manage-links-and-ticket-codes).
 
 ## Every variable
 
 | Var | Required | Default | Purpose |
 |---|---|---|---|
-| `DATABASE_URL` | **yes** | — | Postgres connection string |
+| `DATABASE_URL` | **yes** | — | Postgres connection string; the outbox migration needs at least two pool connections |
 | `SECRET_KEY` | **yes** | — | 64 hex characters; see above |
 | `PORT` | no | `8080` | Listen port |
 | `BASE_URL` | no | `http://localhost:8080` | Public origin: lower-case `scheme://host[:port]`, no path, no trailing slash (a malformed value stops startup and `-check-config`). It is also the origin the CSRF check trusts. Builds absolute URLs (emails, gateway return and notify URLs). An `https://` value also turns on `Secure` cookies and HSTS, tells the CSRF check the browser's origin is https, and hides error detail |
@@ -163,8 +163,8 @@ refused, and so are any of those set without `BLOB_ENDPOINT`.
 
 | Flag | Does |
 |---|---|
-| `-migrate` | Apply pending migrations and exit. Reads only `DATABASE_URL` (and the log settings) |
-| `-migrate-status` | Print each migration's state and exit. Also reads only `DATABASE_URL` |
+| `-migrate` | Apply pending application and outbox migrations and exit. Reads only `DATABASE_URL` (and the log settings) |
+| `-migrate-status` | Print application migration status and exit. Also reads only `DATABASE_URL` |
 | `-check-config` | Validate the full configuration and exit, touching nothing. Takes precedence over the two above |
 
 Without a flag the server applies pending migrations, then starts.

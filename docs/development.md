@@ -146,14 +146,14 @@ exempt, because no CSP applies to them.
 
 Queries live in `internal/db/queries/*.sql`; [sqlc](https://sqlc.dev) reads them against
 the migrations and generates `internal/db/gen`. The stores in `internal/auth`,
-`internal/events`, `internal/registrations` and `internal/outbox` call the generated
-methods and map rows onto domain types.
+`internal/events` and `internal/registrations` call the generated methods and map rows
+onto domain types. The shared outbox module manages its own schema and queries.
 
 ```
 internal/db/migrations/*.sql   the schema (goose runs these; sqlc reads them)
 internal/db/queries/*.sql      the queries, annotated with -- name: X :one
 internal/db/gen/               generated. Do not edit; `make sqlc` rewrites it
-internal/{auth,events,registrations,outbox}
+internal/{auth,events,registrations}
                                the stores: mapping, error translation, transactions
 ```
 

@@ -21,20 +21,21 @@ goevent -check-config && goevent -migrate && exec goevent
 ```
 
 On `SIGTERM` or `SIGINT` the server stops accepting connections, waits up to
-`SHUTDOWN_TIMEOUT_SECONDS` (default 15) for in-flight requests, and stops the mail worker
-before closing the pool.
+`SHUTDOWN_TIMEOUT_SECONDS` (default 15) for in-flight requests, and joins the mail worker
+before closing the pool. If a worker takes more than five seconds to join, the server
+logs that it is still waiting and keeps the pool open while the worker finishes.
 
 ## Background work
 
-All of it runs in every instance rather than being elected to one. Each sweep is a single
-idempotent statement, and the mail worker locks the jobs it sends, so two instances end in
-the state one would have reached.
+All of it runs in every instance rather than being elected to one. Each sweep is a
+single idempotent statement. Mail workers claim due jobs with leases, so two instances
+can work through the same queue concurrently.
 
 | Work | Interval | Does |
 |---|---|---|
 | Hold expiry | on boot, then every minute | Marks `pending` registrations whose hold has lapsed as `expired` ([`cleanup.go`](../cleanup.go)) |
 | Session cleanup | on boot, then hourly | Deletes expired admin sessions |
-| Mail worker | every 5 seconds | Sends up to 20 due email jobs per pass; see [Email](email.md#the-outbox) |
+| Mail worker | after enqueue or every 3 seconds | Sends due email jobs; see [Email](email.md#the-outbox) |
 
 **Hold expiry is bookkeeping.** Availability already counts only confirmed registrations
 and unexpired holds, so a lapsed hold's seats were free the instant it lapsed. The sweep
@@ -49,9 +50,9 @@ Each sweep run has its own one-minute timeout, detached from shutdown, so it fin
 gives up on its own terms. A failed sweep is logged at error level and retried at the next
 tick. A sweep that removes something logs how many at info level.
 
-The mail worker's failures are visible per registration in the admin, and retried with
-backoff from 30 seconds to an hour; a failed send is logged as `email queue` at error level
-without the message or the transport's error text.
+Mail worker failures are visible per registration in the admin. Jobs that exhaust six
+attempts are shown as **Dead** and can be retried there. The `job transition` log records
+the outcome and error class without the payload or the transport's error text.
 
 ## When something goes wrong
 
