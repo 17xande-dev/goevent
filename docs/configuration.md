@@ -164,7 +164,7 @@ refused, and so are any of those set without `BLOB_ENDPOINT`.
 | Flag | Does |
 |---|---|
 | `-migrate` | Apply pending application and outbox migrations and exit. Reads only `DATABASE_URL` (and the log settings) |
-| `-migrate-status` | Print application migration status and exit. Also reads only `DATABASE_URL` |
+| `-migrate-status` | Print application migration status, then the outbox migration (the last line, marked `outbox outbox_goose_version`), and exit. Creates nothing; an outbox history newer than the build is an error. Also reads only `DATABASE_URL` |
 | `-check-config` | Validate the full configuration and exit, touching nothing. Takes precedence over the two above |
 
 Without a flag the server applies pending migrations, then starts.

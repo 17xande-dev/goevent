@@ -423,3 +423,45 @@ func TestMigrate_AdminSessionsLastSeen(t *testing.T) {
 		t.Fatalf("migrate after down: %v", err)
 	}
 }
+
+func TestOutboxStatus_ReportsTheLibrariesOwnMigrationAndCreatesNothing(t *testing.T) {
+	pool := dbtest.EmptyPool(t)
+	ctx, log := t.Context(), slog.New(slog.DiscardHandler)
+
+	before, err := db.OutboxStatus(ctx, pool)
+	if err != nil || len(before) != 1 || before[0].Version != 1 || before[0].Applied {
+		t.Fatalf("fresh database: %+v %v", before, err)
+	}
+	var created bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('outbox_goose_version') IS NOT NULL").Scan(&created); err != nil || created {
+		t.Fatalf("asking for the status created the history table: %v %v", created, err)
+	}
+
+	if err := db.Migrate(ctx, pool, log); err != nil {
+		t.Fatal(err)
+	}
+	// What the library really installed, read from its own table: this fails
+	// when an outbox upgrade ships a migration the status code does not know.
+	var latest int64
+	if err := pool.QueryRow(ctx, "SELECT max(version_id) FROM outbox_goose_version").Scan(&latest); err != nil {
+		t.Fatal(err)
+	}
+	after, err := db.OutboxStatus(ctx, pool)
+	if err != nil || len(after) != 1 || !after[0].Applied || after[0].AppliedAt.IsZero() || after[0].Version != latest {
+		t.Fatalf("after migrate (library latest %d): %+v %v", latest, after, err)
+	}
+}
+
+func TestOutboxStatus_RefusesAHistoryNewerThanTheBuild(t *testing.T) {
+	pool := dbtest.EmptyPool(t)
+	ctx, log := t.Context(), slog.New(slog.DiscardHandler)
+	if err := db.Migrate(ctx, pool, log); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO outbox_goose_version (version_id, is_applied) VALUES (2, true)"); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := db.OutboxStatus(ctx, pool); err == nil {
+		t.Fatalf("a newer outbox history was reported as %+v", s)
+	}
+}

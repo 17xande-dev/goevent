@@ -197,7 +197,11 @@ Once there is deployed data to preserve, the rules change:
 - **Never edit a migration that has been applied anywhere.** goose records versions, not
   checksums, so an edited file is silently skipped. Add a new one numbered above every
   existing file, with a `-- +goose Up` section.
-- **Down sections are for local development.** Production is forward-only.
+- **Down sections are for local development.** Production is forward-only. There is no
+  `-migrate-down` flag; Down runs only in the migration tests. It never touches the outbox:
+  the outbox's `outbox_jobs` table and its history `outbox_goose_version` are owned by the
+  outbox module, recorded apart from `goose_db_version`, and nothing in this repository
+  reverses them. `-migrate-status` shows both histories.
 - **Create extensions in a named schema** (`CREATE EXTENSION … SCHEMA public`). The
   database tests run each in their own schema, and the bare form installs into whichever
   test ran first.

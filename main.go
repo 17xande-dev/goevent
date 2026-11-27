@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -81,7 +82,7 @@ func run() error {
 	}
 	if *migrateStatus {
 		defer pool.Close()
-		return printMigrationStatus(ctx, pool, log)
+		return printMigrationStatus(ctx, os.Stdout, pool, log)
 	}
 	if *migrateOnly {
 		defer pool.Close()
@@ -294,7 +295,10 @@ func deriveKeys(secretHex string) (outbox.Sealer, registrations.Signer, error) {
 	return sealer, registrations.NewSigner(secret), err
 }
 
-func printMigrationStatus(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
+// printMigrationStatus lists the application's migrations and then the outbox
+// module's, which live in their own history table. Nothing is created: asking
+// never initialises either history.
+func printMigrationStatus(ctx context.Context, out io.Writer, pool *pgxpool.Pool, log *slog.Logger) error {
 	status, err := db.Status(ctx, pool, log)
 	if err != nil {
 		return err
@@ -304,7 +308,18 @@ func printMigrationStatus(ctx context.Context, pool *pgxpool.Pool, log *slog.Log
 		if !s.AppliedAt.IsZero() {
 			applied = s.AppliedAt.Format(time.RFC3339)
 		}
-		fmt.Printf("%-6d %-10s %-25s %s\n", s.Source.Version, s.State, applied, s.Source.Path)
+		fmt.Fprintf(out, "%-6d %-10s %-25s %s\n", s.Source.Version, s.State, applied, s.Source.Path)
+	}
+	outboxStatus, err := db.OutboxStatus(ctx, pool)
+	if err != nil {
+		return err
+	}
+	for _, m := range outboxStatus {
+		state, applied := "pending", "pending"
+		if m.Applied {
+			state, applied = "applied", m.AppliedAt.Format(time.RFC3339)
+		}
+		fmt.Fprintf(out, "%-6d %-10s %-25s outbox %s\n", m.Version, state, applied, db.OutboxHistory)
 	}
 	return nil
 }
