@@ -89,6 +89,17 @@ func TestAdminMail_NothingDeadSaysSoAndTheEventsPageStaysQuiet(t *testing.T) {
 	}
 }
 
+// The queue page is reachable from the events page only when something is
+// dead; the menu link is what an administrator finds it by the rest of the time.
+func TestAdminMail_AdminMenuLinksToTheQueuePage(t *testing.T) {
+	s := newApp(t)
+	signIn(t, s.srv)
+	_, page := get(t, s.srv, "/admin/registrations")
+	if !strings.Contains(page, `<a href="/admin/mail">Email</a>`) {
+		t.Errorf("the admin menu has no Email link: %s", excerpt(page))
+	}
+}
+
 func TestAdminMail_RetryNeedsACSRFToken(t *testing.T) {
 	s, _, job := deadConfirmation(t)
 
