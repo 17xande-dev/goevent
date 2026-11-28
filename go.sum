@@ -2,8 +2,8 @@ github.com/17xande-dev/env v0.1.0 h1:eHn9RkJeQ9/Ccxbno5oNjUcocvJTINTMvp8pdcKoVvA
 github.com/17xande-dev/env v0.1.0/go.mod h1:SOeje0cocSErZ7BjME29O0s8zIx1VrVSiuePDS8QdCg=
 github.com/17xande-dev/mailer v0.3.0 h1:iK9RApl4GNYdhnvWb8af4ZFfWUhIS+YHq7mKR7p1Uo8=
 github.com/17xande-dev/mailer v0.3.0/go.mod h1:/s+gTKaMVwTz4go4OJLv8K9ApoSgPruzCZ5k8hV3UoA=
-github.com/17xande-dev/outbox v0.1.0 h1:L8MKJsrxW8p5F7TCWPZBnKZa9huE1odukgpmj2XaxE0=
-github.com/17xande-dev/outbox v0.1.0/go.mod h1:NUZYBsT+614gSrIt2M3n+TDBLhb5da2KdBX2tnauQAc=
+github.com/17xande-dev/outbox v0.2.0 h1:ECRoI9UPOf1xIPFELeD7sIgqlak8kXqghPf4rsjljnY=
+github.com/17xande-dev/outbox v0.2.0/go.mod h1:NUZYBsT+614gSrIt2M3n+TDBLhb5da2KdBX2tnauQAc=
 github.com/17xande-dev/password v0.1.0 h1:ZjZJceKSnd5bZ5fPooKNLnngZU+K9c5hiPo4vSz1jok=
 github.com/17xande-dev/password v0.1.0/go.mod h1:k5baj87kSUM60Fg8e4jkx0MU7+4uPg1camTH2fysKNI=
 github.com/17xande-dev/payment v0.2.2 h1:jEaQdDCCsGrxtrhsju31z7SihxUeR3xoiIHA6k+TLx0=

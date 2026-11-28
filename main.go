@@ -310,16 +310,17 @@ func printMigrationStatus(ctx context.Context, out io.Writer, pool *pgxpool.Pool
 		}
 		fmt.Fprintf(out, "%-6d %-10s %-25s %s\n", s.Source.Version, s.State, applied, s.Source.Path)
 	}
-	outboxStatus, err := db.OutboxStatus(ctx, pool)
+	outboxStatus, err := pgxstore.MigrationStatus(ctx, pool)
 	if err != nil {
 		return err
 	}
-	for _, m := range outboxStatus {
+	for _, m := range outboxStatus.Migrations {
 		state, applied := "pending", "pending"
 		if m.Applied {
-			state, applied = "applied", m.AppliedAt.Format(time.RFC3339)
+			// Keep the status timestamp in UTC, regardless of the host's timezone.
+			state, applied = "applied", m.AppliedAt.UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(out, "%-6d %-10s %-25s outbox %s\n", m.Version, state, applied, db.OutboxHistory)
+		fmt.Fprintf(out, "%-6d %-10s %-25s outbox outbox_goose_version\n", m.Version, state, applied)
 	}
 	return nil
 }
